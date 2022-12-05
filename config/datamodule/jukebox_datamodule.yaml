@@ -1,6 +1,6 @@
 _target_: src.datamodule.jukebox_datamodule.JukeboxDataModule
-root_dir: ${oc.env:MAESTRO_DATA_DIR}
-lvl: ???
+root_dir: ${oc.env:MAESTRO_DATASET_DIR}
+lvl: 2
 batch_size: 32
-num_workers: null
-num_samples: null
+num_workers: 0
+num_samples: 2048

@@ -83,7 +83,7 @@ class JukeboxDataModule(pl.LightningDataModule):
             batch_size=self.batch_size // self.samples_per_file,
             num_workers=self.num_workers,
             shuffle=True,
-            persistent_workers=True,
+            persistent_workers=self.persistent_workers,
             pin_memory=self.pin_memory,
             collate_fn=collate_fn,
         )
@@ -94,7 +94,7 @@ class JukeboxDataModule(pl.LightningDataModule):
             batch_size=self.batch_size // self.samples_per_file,
             num_workers=self.num_workers,
             shuffle=False,
-            persistent_workers=True,
+            persistent_workers=self.persistent_workers,
             pin_memory=self.pin_memory,
             collate_fn=collate_fn,
         )
@@ -105,7 +105,7 @@ class JukeboxDataModule(pl.LightningDataModule):
             batch_size=self.batch_size // self.samples_per_file,
             num_workers=self.num_workers,
             shuffle=False,
-            persistent_workers=True,
+            persistent_workers=Tself.persistent_workersrue,
             pin_memory=self.pin_memory,
             collate_fn=collate_fn,
         )
