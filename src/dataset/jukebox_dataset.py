@@ -29,6 +29,7 @@ class JukeboxDataset(Dataset):
 
         self.root_dir = Path(root_dir)
         assert self.root_dir.exists(), f"Root directory {self.root_dir} does not exist."
+        self.lvl = lvl
 
         assert split in [
             "train",
@@ -40,32 +41,47 @@ class JukeboxDataset(Dataset):
         # load the metadata
         self.metadata_file = self.root_dir / "maestro-v3.0.0.csv"
         assert self.metadata_file.exists(), f"Metadata file {self.metadata_file} does not exist."
-
         self.metadata = pd.read_csv(self.metadata_file).query("split == @self.split")
 
-        # all files that have embeddings for this level and are in the split
+        self.file_paths = self.load_file_paths()
+
+        if self.use_cache:
+            self.cache = Manager().dict()
+
+    def load_file_paths(self):
+        # check locally if files array is cached
+        cache_file = self.root_dir / f"files_cached_{self.split}_lvl{self.lvl}.csv"
+
+        if cache_file.exists():
+            file_paths = pd.read_csv(cache_file).values.flatten()
+            return file_paths
+
+        # all file_paths that have embeddings for this level and are in the split
         split_audio_files = set(self.metadata["audio_filename"].unique())
-        self.files = [f.relative_to(root_dir) for f in self.root_dir.glob(f"**/*lvl{lvl}*.pt")]
-        self.files = [f for f in self.files if str(f).split(".")[0] + ".wav" in split_audio_files]
+        file_paths = [f.relative_to(self.root_dir) for f in self.root_dir.glob(f"**/*lvl{self.lvl}*.pt")]
+        file_paths = [f for f in file_paths if str(f).split(".")[0] + ".wav" in split_audio_files]
 
         # filter out the every file which correspond to the last sample
         # file has the form name.part{sample_nr}-of-{final_sample_nr}.jukebox.lvl0.pt
-        # we want to keep all files except the last one, where sample_nr == final_sample_nr
+        # we want to keep all file_paths except the last one, where sample_nr == final_sample_nr
         def is_last_sample(file):
             part_desc = file.name.split(".")[1].split("-")
             start_index = part_desc[0][4:]
             end_index = part_desc[2]
             return start_index == end_index
 
-        self.files = [f for f in self.files if not is_last_sample(f)]
-        if self.use_cache:
-            self.cache = Manager().dict()
+        file_paths = [f for f in file_paths if not is_last_sample(f)]
+
+        # cache the file_paths
+        pd.DataFrame(file_paths).to_csv(cache_file, index=False)
+
+        return file_paths
 
     def __len__(self):
-        return len(self.files)
+        return len(self.file_paths)
 
     def __getitem__(self, index):
-        file = self.files[index]
+        file = self.file_paths[index]
         file = self.root_dir / file
         if self.use_cache and (file in self.cache):
             embedding = self.cache[file]
