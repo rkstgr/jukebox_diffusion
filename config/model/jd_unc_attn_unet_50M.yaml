@@ -1,0 +1,7 @@
+model:
+  _target_: src.models.jukebox_diffusion.UnconditionalJukeboxDiffusion
+  model:
+    _target_: src.module.diffusion_attn_unet_1d.DiffusionAttnUnet1D
+    io_channels: 64
+    n_attn_layers: 6
+    channel_sizes: [128, 128, 256, 256, 256, 256, 256, 256, 256, 256] # 2*128 + 8*256
