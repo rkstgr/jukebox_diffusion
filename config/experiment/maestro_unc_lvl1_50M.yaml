@@ -29,7 +29,7 @@ datamodule:
   num_workers: 16
   lvl: 1
   batch_size: 68
-  num_samples: 2048
+  sequence_len: 2048
   persistent_workers: true
 
 model:

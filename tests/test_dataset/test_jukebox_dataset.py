@@ -15,7 +15,7 @@ def test_jukebox_dataset():
         lvl=2,
         split="train",
         use_cache=False,
-        num_samples=2048,
+        sequence_len=2048,
         samples_per_file=1,
         deterministic=False
     )

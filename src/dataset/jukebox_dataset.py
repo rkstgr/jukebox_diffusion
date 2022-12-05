@@ -15,14 +15,14 @@ class JukeboxDataset(Dataset):
             root_dir,
             split: str,
             lvl: int,
-            num_samples: Optional[int] = None,
+            sequence_len: Optional[int] = None,
             deterministic: bool = False,
-            # only used when num_samples is not None, will start the sample at the beginning of the embedding
+            # only used when sequence_len is not None, will start the sample at the beginning of the embedding
             use_cache: bool = True,
             samples_per_file: int = 1,
     ):
         super().__init__()
-        self.num_samples = num_samples
+        self.sequence_len = sequence_len
         self.deterministic = deterministic
         self.use_cache = use_cache
         self.samples_per_file = samples_per_file
@@ -89,16 +89,16 @@ class JukeboxDataset(Dataset):
             embedding = torch.load(file, map_location=torch.device("cpu"))
             if self.use_cache:
                 self.cache[file] = embedding
-        if self.num_samples is not None:
+        if self.sequence_len is not None:
             if self.deterministic:
-                embedding = torch.stack([embedding[..., : self.num_samples, :] for _ in range(self.samples_per_file)],
+                embedding = torch.stack([embedding[..., : self.sequence_len, :] for _ in range(self.samples_per_file)],
                                         dim=0)
             else:
                 # draw a random sample from the embedding
                 embeddings = []
                 for i in range(self.samples_per_file):
-                    start_index = torch.randint(0, embedding.shape[-2] - self.num_samples, (1,)).item()
-                    embeddings.append(embedding[..., start_index: start_index + self.num_samples, :])
+                    start_index = torch.randint(0, embedding.shape[-2] - self.sequence_len, (1,)).item()
+                    embeddings.append(embedding[..., start_index: start_index + self.sequence_len, :])
                 embedding = torch.stack(embeddings, dim=0)
 
         if embedding.ndim == 4:
