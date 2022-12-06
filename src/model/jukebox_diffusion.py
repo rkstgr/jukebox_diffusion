@@ -10,6 +10,7 @@ from einops import rearrange
 from transformers import JukeboxVQVAEConfig, JukeboxVQVAE
 
 from src.diffusion.pipeline import SequencePipeline
+from src.diffusion.timestep_sampler.constant_sampler import TimeConstantSampler
 from src.module.lr_scheduler.warmup import WarmupScheduler
 
 
@@ -51,6 +52,8 @@ class UnconditionalJukeboxDiffusion(pl.LightningModule):
         else:
             self.noise_scheduler = noise_scheduler
 
+        self.timestep_sampler = TimeConstantSampler(max_timestep=num_train_timesteps)
+
         self.jukebox_vqvae = None
         self.lr_scheduler = None
 
@@ -65,11 +68,9 @@ class UnconditionalJukeboxDiffusion(pl.LightningModule):
         """
         # Sample noise that we'll add to the latents
         noise = torch.randn_like(x, dtype=x.dtype, device=x.device).float()
-        bsz = x.shape[0]
 
         # Sample a random timestep for each image
-        timesteps = torch.randint(0, self.noise_scheduler.num_train_timesteps, (bsz,), device=x.device)
-        timesteps = timesteps.long()
+        timesteps = self.sample_timesteps(x.shape).to(x.device)
 
         # Add noise to the latents according to the noise magnitude at each timestep
         # (this is the forward diffusion process)
@@ -110,6 +111,9 @@ class UnconditionalJukeboxDiffusion(pl.LightningModule):
             self.log_audio(audio, "generated", f"epoch_{self.current_epoch}_seed_{seed}")
 
         return super().validation_epoch_end(outputs)
+
+    def sample_timesteps(self, x_shape: torch.Size):
+        return self.timestep_sampler.sample_timesteps(x_shape)
 
     def log_audio(self, audio, key, caption=None):
         self.logger.experiment.log({

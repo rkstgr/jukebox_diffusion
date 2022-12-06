@@ -4,6 +4,11 @@ import pytest
 
 from src.datamodule.jukebox_datamodule import JukeboxDataModule
 
+pytestmark = pytest.mark.skipif(
+    "MAESTRO_DATASET_DIR" not in os.environ.keys(),
+    reason="Environment variable 'MAESTRO_DATASET_DIR' missing."
+)
+
 
 @pytest.fixture
 def datamodule():
