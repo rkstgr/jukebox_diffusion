@@ -107,4 +107,4 @@ class JukeboxDataset(Dataset):
         if self.samples_per_file == 1:
             embedding = embedding.squeeze(0)
 
-        return torch.clamp(embedding.float() / 10, -1, 1)
+        return embedding.float()
