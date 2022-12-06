@@ -5,9 +5,11 @@ from contextlib import contextmanager
 from typing import Optional, List
 
 import torch
-from einops import rearrange
+from einops import rearrange, repeat
 from torch import nn, optim
 from torch.nn import functional as F
+
+from src.module.integer_encoding import IntegerFourierEmbedding
 
 
 class DiffusionAttnUnet1D(nn.Module):
@@ -17,13 +19,14 @@ class DiffusionAttnUnet1D(nn.Module):
             n_attn_layers=6,
             channel_sizes: Optional[List[int]] = None,
             latent_dim=0,
+            timestep_max=1000,
     ):
         super().__init__()
         if channel_sizes is None:
             channel_sizes = [128, 128, 256, 256] + [512] * 10
 
         self.output_dim = io_channels
-        self.timestep_embed = FourierFeatures(1, 16)
+        self.timestep_embed = IntegerFourierEmbedding(16, min_index=0, max_index=timestep_max)
         depth = len(channel_sizes)
 
         attn_layer = depth - n_attn_layers - 1
@@ -79,18 +82,38 @@ class DiffusionAttnUnet1D(nn.Module):
                 param *= 0.5
 
     def forward(self, x_in, t, cond=None):
-        x_in = rearrange(x_in, "b t c -> b c t")
-        t = t.expand(x_in.shape[0]).to(x_in.device)
-
-        timestep_embed = expand_to_planes(self.timestep_embed(t[:, None]), x_in.shape)
-
-        inputs = [x_in, timestep_embed]
-
+        """
+        :param x_in: (batch, seq_len, channels)
+        :param t: (), (batch) or (batch, seq_len)
+        :param cond: Currently not supported
+        :return: (batch, seq_len, channels)
+        """
         if cond is not None:
-            cond = F.interpolate(cond, (x_in.shape[2],), mode='linear', align_corners=False)
-            inputs.append(cond)
+            raise NotImplementedError
 
-        out = self.net(torch.cat(inputs, dim=1))
+        batch, seq_len, channels = x_in.shape
+
+        # expand t to (batch)
+        if t.dim() == 0:
+            t = t.unsqueeze(0).expand(batch)
+        if t.dim() == 1:
+            t = repeat(t, "b -> b t", t=seq_len)
+        if t.dim() == 2:
+            assert t.shape[0] == batch, "Batch size mismatch between t and x_in"
+            assert t.shape[1] == seq_len, "Sequence length mismatch between t and x_in"
+
+        # move t to device
+        t = t.to(x_in.device)
+        t_emb = self.timestep_embed(t)  # (batch, seq_len, 16)
+
+        inputs = [x_in, t_emb]
+
+        # if cond is not None:
+        #     cond = F.interpolate(cond, (x_in.shape[2],), mode='linear', align_corners=False)
+        #     inputs.append(cond)
+
+        x_net = rearrange(torch.cat(inputs, dim=-1), "b t c -> b c t")
+        out = self.net(x_net)  # net takes in (batch, channels, seq_len)
         return rearrange(out, "b c t -> b t c")
 
     @property
@@ -407,9 +430,8 @@ if __name__ == '__main__':
 
     model = DiffusionAttnUnet1D(
         io_channels=64,
-        depth=8,
         channel_sizes=[128] * 4 + [256] * 3 + [512] * 1
     )
-    x = torch.rand(1, 2048, 64)
-    t = torch.randint(0, 100, (1,)).long()
-    summary(model, input_data=(x, t), verbose=0, device='cpu', depth=2)
+    x_test = torch.rand(1, 2048, 64)
+    t_test = torch.randint(0, 100, (1,)).long()
+    summary(model, input_data=(x_test, t_test), verbose=0, device='cpu', depth=2)
