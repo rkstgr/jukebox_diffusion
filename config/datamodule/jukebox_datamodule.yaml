@@ -1,0 +1,6 @@
+_target_: src.datamodule.jukebox_datamodule.JukeboxDataModule
+root_dir: ${oc.env:MAESTRO_DATASET_DIR}
+lvl: 2
+batch_size: 32
+num_workers: 0
+sequence_len: 2048
