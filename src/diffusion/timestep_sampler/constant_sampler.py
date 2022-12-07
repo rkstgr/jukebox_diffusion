@@ -15,7 +15,7 @@ class TimeConstantSampler(DiffusionTimestepSampler):
     def __init__(self, max_timestep: int = 1000):
         super().__init__(max_timestep=max_timestep)
 
-    def sample_timesteps(self, input_size: torch.Size = None) -> torch.Tensor:
+    def sample_timesteps(self, input_size: torch.Size = None) -> torch.LongTensor:
         """
         Args:
             input_size [B, S, D]: Shape of the input tensor, used to determine the batch size and sequence length

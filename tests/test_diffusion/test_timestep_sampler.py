@@ -25,3 +25,5 @@ def test_partial_sampler(x):
     assert torch.all(t[:, :1024] == 0)
     assert torch.all(t[:, 1024:] < 1000)
     assert torch.all(t[:, 1024:] >= 0)
+    for i in range(t.shape[0]):
+        assert torch.all(t[i, 1024:] == t[i, 1024])

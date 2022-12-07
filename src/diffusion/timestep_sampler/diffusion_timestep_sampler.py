@@ -8,7 +8,7 @@ class DiffusionTimestepSampler(abc.ABC):
         self.max_timestep = max_timestep
 
     @abc.abstractmethod
-    def sample_timesteps(self, input_size: torch.Size = None) -> torch.Tensor:
+    def sample_timesteps(self, input_size: torch.Size = None) -> torch.LongTensor:
         """
         Args:
             input_size [B, S]: Shape of the input tensor, used to determine the batch size and sequence length

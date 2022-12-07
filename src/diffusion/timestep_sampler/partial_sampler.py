@@ -1,4 +1,5 @@
 import torch
+from einops import repeat
 
 from src.diffusion.timestep_sampler.diffusion_timestep_sampler import DiffusionTimestepSampler
 
@@ -21,7 +22,7 @@ class PartialSampler(DiffusionTimestepSampler):
         self.start_fraction = start_fraction
         self.end_fraction = end_fraction
 
-    def sample_timesteps(self, input_size: torch.Size = None) -> torch.Tensor:
+    def sample_timesteps(self, input_size: torch.Size = None) -> torch.LongTensor:
         """
         Args:
             input_size [B, S, D]: Shape of the input tensor, used to determine the batch size and sequence length
@@ -29,8 +30,10 @@ class PartialSampler(DiffusionTimestepSampler):
         Returns:
             Long Tenor [B]: Only one timestep per batch
         """
-        t = torch.zeros(input_size[0], input_size[1]).long()
+        tx = torch.zeros(input_size[0], input_size[1]).long()
         start = int(self.start_fraction * input_size[1])
         end = int(self.end_fraction * input_size[1])
-        t[:, start:end] = torch.randint(0, self.max_timestep, (input_size[0], end - start)).long()
-        return t
+        t = torch.randint(0, self.max_timestep, (input_size[0],)).long()
+        t = repeat(t, "b -> b s", s=end - start)
+        tx[:, start:end] = t
+        return tx
