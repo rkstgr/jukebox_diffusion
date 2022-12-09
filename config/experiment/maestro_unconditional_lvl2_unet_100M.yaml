@@ -1,0 +1,58 @@
+# @package _global_
+
+defaults:
+  - override /callbacks: default_loss.yaml
+  - override /trainer: default.yaml
+  - override /datamodule: jukebox_datamodule.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["maestro", "jukebox", "lvl2", "unconditional"]
+
+seed: 20
+
+trainer:
+  gradient_clip_val: 1
+  log_every_n_steps: 10
+  check_val_every_n_epoch: 5
+  accumulate_grad_batches: 4
+
+datamodule:
+  root_dir: ${oc.env:MAESTRO_DATA_DIR}
+  num_workers: 18
+  lvl: 2
+  batch_size: 36
+  sequence_len: 4096
+  persistent_workers: true
+
+model:
+  model:
+    # 96Mil params
+    _target_: src.module.diffusion_attn_unet_1d.DiffusionAttnUnet1D
+    io_channels: 64
+    n_attn_layers: 6
+    channel_sizes: [128, 128, 128, 128,  256, 256, 256, 256,  512, 512, 512]
+  lr: 1e-4
+  lr_warmup_steps: 1000
+  num_train_timesteps: 1000
+  inference_batch_size: 4
+  inference_seq_len: 4096
+  jukebox_embedding_lvl: 2
+  noise_scheduler:
+    _target_: diffusers.PNDMScheduler
+    num_train_timesteps: 1000
+    beta_start: 1e-4
+    beta_end: 0.02
+    beta_schedule: linear
+  timestep_sampler:
+    _target_: src.diffusion.timestep_sampler.TimeConstantSampler
+    max_timestep: 1000
+  num_inference_steps: 50
+  generate_unconditional: true
+  generate_continuation: false
+
+
+logger:
+  wandb:
+    tags: ${tags}
