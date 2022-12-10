@@ -1,0 +1,3 @@
+_target_: src.model.jukebox_diffusion.JukeboxDiffusion
+model:
+  _target_: src.module.diffusion_attn_unet_1d.DiffusionAttnUnet1D

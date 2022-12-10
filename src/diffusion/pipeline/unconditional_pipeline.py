@@ -1,12 +1,13 @@
 from typing import Optional
 
 import torch
-from diffusers import DiffusionPipeline
+
+from src.diffusion.pipeline import SequencePipeline
 
 
-class SequencePipeline(DiffusionPipeline):
+class UnconditionalPipeline(SequencePipeline):
 
-    def __init__(self, unet, scheduler):
+    def __init__(self, unet, scheduler, *args, **kwargs):
         super().__init__()
         self.unet = unet
         self.scheduler = scheduler

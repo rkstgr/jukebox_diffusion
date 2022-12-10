@@ -150,3 +150,9 @@ data/
 logs/
 .env
 .autoenv
+
+# Weights & Biases
+wandb/
+
+# SLURM Scripts
+train.sbatch
