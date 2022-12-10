@@ -1,15 +1,14 @@
 import os
+from pathlib import Path
 from typing import Optional
 
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-import wandb
-from pathlib import Path
-from pytorch_lightning.loggers import WandbLogger
 import torchaudio
 from diffusers import SchedulerMixin, PNDMScheduler
 from einops import rearrange
+from pytorch_lightning.loggers import WandbLogger
 from transformers import JukeboxVQVAEConfig, JukeboxVQVAE
 
 from src.diffusion.pipeline.inpainting_pipeline import InpaintingPipeline
@@ -156,6 +155,7 @@ class JukeboxDiffusion(pl.LightningModule):
         if self.hparams.skip_audio_logging:
             return
         if isinstance(self.logger, WandbLogger):
+            import wandb
             self.logger.experiment.log({
                 f"audio/{key}": [wandb.Audio(a, sample_rate=self.SAMPLE_RATE, caption=caption) for a in audio.cpu()],
             })
