@@ -1,7 +1,9 @@
 # @package _global_
 
+# maestro_unconditional_lvl2_unet_100M.yaml
+
 defaults:
-  - override /callbacks: default_loss.yaml
+  - override /callbacks: default.yaml
   - override /trainer: default.yaml
   - override /datamodule: jukebox_datamodule.yaml
 
@@ -19,10 +21,10 @@ trainer:
   accumulate_grad_batches: 4
 
 datamodule:
-  root_dir: ${oc.env:MAESTRO_DATA_DIR}
+  root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 18
   lvl: 2
-  batch_size: 36
+  batch_size: 64
   sequence_len: 4096
   persistent_workers: true
 
@@ -34,7 +36,7 @@ model:
     n_attn_layers: 6
     channel_sizes: [128, 128, 128, 128,  256, 256, 256, 256,  512, 512, 512]
   lr: 1e-4
-  lr_warmup_steps: 1000
+  lr_warmup_steps: 2000
   num_train_timesteps: 1000
   inference_batch_size: 4
   inference_seq_len: 4096
@@ -51,8 +53,15 @@ model:
   num_inference_steps: 50
   generate_unconditional: true
   generate_continuation: false
+  skip_audio_logging: true
 
 
 logger:
   wandb:
+    project: "jukebox_diffusion"
     tags: ${tags}
+    # settings:
+    #   _target_: wandb.Settings
+    #   start_method: "fork"
+  tensorboard:
+    name: "jukebox_diffusion"

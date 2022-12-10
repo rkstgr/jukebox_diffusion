@@ -20,6 +20,8 @@ class JukeboxDataset(Dataset):
             # only used when sequence_len is not None, will start the sample at the beginning of the embedding
             use_cache: bool = True,
             samples_per_file: int = 1,
+            *args,
+            **kwargs
     ):
         super().__init__()
         self.sequence_len = sequence_len

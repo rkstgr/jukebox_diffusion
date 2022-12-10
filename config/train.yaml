@@ -5,7 +5,7 @@
 defaults:
   - _self_
   - datamodule: jukebox_datamodule
-  - model: jd_unc_attn_unet_50M
+  - model: jukebox_diffusion
   - callbacks: default.yaml
   - logger: null # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - trainer: default.yaml

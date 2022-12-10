@@ -5,6 +5,9 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 import wandb
+from pathlib import Path
+from pytorch_lightning.loggers import WandbLogger
+import torchaudio
 from diffusers import SchedulerMixin, PNDMScheduler
 from einops import rearrange
 from transformers import JukeboxVQVAEConfig, JukeboxVQVAE
@@ -34,11 +37,12 @@ class JukeboxDiffusion(pl.LightningModule):
             generate_unconditional: bool = True,
             generate_continuation: bool = False,
             prompt_batch_idx: int = 0,
+            skip_audio_logging: bool = False,
             *args,
             **kwargs,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["model", "noise_scheduler"])
+        self.save_hyperparameters(ignore=["model", "noise_scheduler", "timestep_sampler", "*args", "**kwargs"])
         self.model = model
 
         if noise_scheduler is None:
@@ -113,6 +117,8 @@ class JukeboxDiffusion(pl.LightningModule):
         loss = self(x)
         self.log("val/loss", loss)
         if self.logger and batch_idx == self.hparams.prompt_batch_idx:
+            audio = self.decode(x)
+            self.log_audio(audio, "val", f"epoch_{self.current_epoch}")
             return x
 
     def validation_epoch_end(self, outputs) -> None:
@@ -147,9 +153,18 @@ class JukeboxDiffusion(pl.LightningModule):
         return self.timestep_sampler.sample_timesteps(x_shape)
 
     def log_audio(self, audio, key, caption=None):
-        self.logger.experiment.log({
-            f"audio/{key}": [wandb.Audio(a, sample_rate=self.SAMPLE_RATE, caption=caption) for a in audio.cpu()],
-        })
+        if self.hparams.skip_audio_logging:
+            return
+        if isinstance(self.logger, WandbLogger):
+            self.logger.experiment.log({
+                f"audio/{key}": [wandb.Audio(a, sample_rate=self.SAMPLE_RATE, caption=caption) for a in audio.cpu()],
+            })
+        else:
+            audio = torch.clamp(audio, -1, 1).cpu()
+            for i, a in enumerate(audio):
+                path = os.path.join(self.logger.save_dir, "audio", key, f"{caption}_batch{i}.wav")
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
+                torchaudio.save(filepath=path, src=a, sample_rate=self.SAMPLE_RATE)
 
     def load_jukebox_vqvae(self, vae_path):
         print("Loading Jukebox VAE")
