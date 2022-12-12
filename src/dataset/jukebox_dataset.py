@@ -33,6 +33,8 @@ class JukeboxDataset(Dataset):
         self.deterministic = deterministic
         self.use_cache = use_cache
         self.samples_per_file = samples_per_file
+        if self.samples_per_file > 1:
+            raise NotImplementedError("Sampling multiple samples per file is not implemented yet.")
 
         self.root_dir = Path(root_dir)
         assert self.root_dir.exists(), f"Root directory {self.root_dir} does not exist."
@@ -100,10 +102,13 @@ class JukeboxDataset(Dataset):
         if self.use_cache and (file in self.cache):
             return self.cache[file]
 
-        embedding = torch.load(file, map_location=torch.device("cpu"))
+        embedding = torch.load(file, map_location=torch.device("cpu"))  # (1, S, 64)
+        embedding = embedding.squeeze(0)  # (S, 64)
 
         if self.use_cache:
             self.cache[file] = embedding
+        
+        return embedding
 
     def getitem(self, lvl, index, start_offset: Optional[int] = None, sequence_len: Optional[int] = None):
         file = self.file_paths[lvl][index]
@@ -123,12 +128,12 @@ class JukeboxDataset(Dataset):
 
     def __getitem__(self, index) -> JukeboxSample:
         if len(self.lvl) == 1:
-            return self.getitem(index, self.lvl[0], sequence_len=self.sequence_len)[0]
+            return self.getitem(lvl=self.lvl[0], index=index, sequence_len=self.sequence_len)[0]
 
         sample = {}
 
         # get the sample for the lowest lvl
-        embedding, start_offset = self.getitem(index, self.lvl[0], sequence_len=self.sequence_len)
+        embedding, start_offset = self.getitem(lvl=self.lvl[0], index=index, sequence_len=self.sequence_len)
         sample[self.lvl[0]] = embedding
 
         # get the other samples
@@ -136,6 +141,6 @@ class JukeboxDataset(Dataset):
             lvl_difference = lvl - self.min_lvl
             sequence_len = self.sequence_len // (4 ** lvl_difference)
             offset = start_offset // (4 ** lvl_difference)
-            sample[lvl] = self.getitem(index, lvl, offset, sequence_len)[0]
+            sample[lvl] = self.getitem(lvl, index, offset, sequence_len)[0]
 
         return sample

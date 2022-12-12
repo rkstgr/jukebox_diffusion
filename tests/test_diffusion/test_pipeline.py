@@ -42,7 +42,7 @@ def test_test_model(model, scheduler):
     t = torch.randint(0, len(scheduler.timesteps), (x.shape[0],))
     xt = scheduler.add_noise(x, noise, timesteps=t)
 
-    assert torch.allclose(model(xt, t), noise)
+    assert torch.allclose(model(xt, t), noise), f"Avg. error: {torch.mean(torch.abs(model(xt, t) - noise))}"
 
 
 def test_inpainting_pipeline(model, scheduler):
