@@ -4,12 +4,7 @@ import pytest
 import torch
 
 from src.datamodule.jukebox_datamodule import JukeboxDataModule, collate_fn
-
-depends_on_maestro_dataset = pytest.mark.skipif(
-    "MAESTRO_DATASET_DIR" not in os.environ.keys(),
-    reason="Environment variable 'MAESTRO_DATASET_DIR' missing."
-)
-
+from tests.conftest import depends_on_maestro_dataset
 
 def test_collate_fn():
     x = [torch.rand(2048, 64) for _ in range(8)]
@@ -87,7 +82,6 @@ def test_multiple_lvl():
         break
 
 @depends_on_maestro_dataset
-@pytest.mark.skip(reason="Not implemented yet")
 def test_multiple_samples_per_file():
     datamodule = JukeboxDataModule(
         root_dir=os.environ["MAESTRO_DATASET_DIR"],
@@ -101,4 +95,24 @@ def test_multiple_samples_per_file():
     train_loader = datamodule.train_dataloader()
     for batch in train_loader:
         assert batch.shape == TARGET_SHAPE
+        break
+
+@depends_on_maestro_dataset
+def test_multiple_samples_per_file_multi_lvl():
+    datamodule = JukeboxDataModule(
+        root_dir=os.environ["MAESTRO_DATASET_DIR"],
+        lvl=[2, 1, 0],
+        batch_size=BATCH_SIZE,
+        num_workers=0,
+        sequence_len=SEQUENCE_LEN,
+        samples_per_file=2,
+    )
+    datamodule.setup()
+    train_loader = datamodule.train_dataloader()
+    for batch in train_loader:
+        assert isinstance(batch, dict)
+        assert set(batch.keys()) == set([2, 1, 0])
+        assert batch[2].shape == (BATCH_SIZE, SEQUENCE_LEN//16, DATA_DIMENSION)
+        assert batch[1].shape == (BATCH_SIZE, SEQUENCE_LEN//4,  DATA_DIMENSION)
+        assert batch[0].shape == (BATCH_SIZE, SEQUENCE_LEN,     DATA_DIMENSION)
         break

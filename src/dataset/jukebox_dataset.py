@@ -1,9 +1,8 @@
 from pathlib import Path
-from typing import Optional, Union, List, Dict
+from typing import Iterable, Optional, Union, List, Dict
 
 import pandas as pd
 import torch
-from torch.multiprocessing import Manager
 from torch.utils.data import Dataset
 
 JukeboxSample = Union[torch.Tensor, Dict[int, torch.Tensor]]
@@ -22,7 +21,6 @@ class JukeboxDataset(Dataset):
             lvl: Union[int, List[int]],
             sequence_len: Optional[int] = None,
             deterministic: bool = False,
-            # only used when sequence_len is not None, will start the sample at the beginning of the embedding
             use_cache: bool = True,
             samples_per_file: int = 1,
             *args,
@@ -33,8 +31,12 @@ class JukeboxDataset(Dataset):
         self.deterministic = deterministic
         self.use_cache = use_cache
         self.samples_per_file = samples_per_file
-        if self.samples_per_file > 1:
-            raise NotImplementedError("Sampling multiple samples per file is not implemented yet.")
+
+        if self.deterministic:
+            import warnings
+            warnings.warn("Deterministic mode is enabled.")
+
+        assert self.samples_per_file >= 1, f"Samples per file must be at least 1, but got {self.samples_per_file}"
 
         self.root_dir = Path(root_dir)
         assert self.root_dir.exists(), f"Root directory {self.root_dir} does not exist."
@@ -60,11 +62,12 @@ class JukeboxDataset(Dataset):
         self.file_paths = {lvl: self.load_file_paths(lvl) for lvl in self.lvl}
 
         if self.use_cache:
-            self.cache = Manager().dict()
+            print("Caching files...")
+            self.cache = dict()
 
     def load_file_paths(self, lvl):
         # check locally if files array is cached
-        cache_file = self.root_dir / f"files_cached_{self.split}_lvl{lvl}.csv"
+        cache_file = self.root_dir / f"files_cached_{self.split}_lvl{lvl}.v2.csv"
 
         if cache_file.exists():
             file_paths = pd.read_csv(cache_file).values.flatten()
@@ -72,7 +75,7 @@ class JukeboxDataset(Dataset):
 
         # all file_paths that have embeddings for this level and are in the split
         split_audio_files = set(self.metadata["audio_filename"].unique())
-        file_paths = [f.relative_to(self.root_dir) for f in self.root_dir.glob(f"**/*lvl{lvl}*.pt")]
+        file_paths = [f.relative_to(self.root_dir) for f in self.root_dir.glob(f"**/*lvl{lvl}.v2.pt")]
         file_paths = [f for f in file_paths if str(f).split(".")[0] + ".wav" in split_audio_files]
 
         # filter out the every file which correspond to the last sample
@@ -84,7 +87,7 @@ class JukeboxDataset(Dataset):
             end_index = part_desc[2]
             return start_index == end_index
 
-        file_paths = [f for f in file_paths if not is_last_sample(f)]
+        file_paths = sorted([f for f in file_paths if not is_last_sample(f)])
 
         # cache the file_paths
         pd.DataFrame(file_paths).to_csv(cache_file, index=False)
@@ -110,37 +113,50 @@ class JukeboxDataset(Dataset):
         
         return embedding
 
-    def getitem(self, lvl, index, start_offset: Optional[int] = None, sequence_len: Optional[int] = None):
+    def getitem(self, lvl, index, start_offsets: Optional[torch.LongTensor] = None, sequence_len: Optional[int] = None):
         file = self.file_paths[lvl][index]
         file = self.root_dir / file
-
         embedding = self.load_file(file)
 
         if sequence_len is None:
             sequence_len = embedding.shape[-2]
 
-        if start_offset is not None and not self.deterministic:
-            start_offset = torch.randint(0, embedding.shape[-2] - self.sequence_len, (1,)).item()
-        else:
-            start_offset = 0
+        if start_offsets is None and not self.deterministic:
+            if self.sequence_len == embedding.shape[-2]:
+                start_offsets = torch.zeros(self.samples_per_file, dtype=torch.long)
+            else:
+                start_offsets = torch.randint(0, embedding.shape[-2] - self.sequence_len, (self.samples_per_file,)).long()
 
-        return embedding[start_offset:start_offset + sequence_len, :].float(), start_offset
+        elif self.deterministic:
+            start_offsets = torch.zeros(self.samples_per_file, dtype=torch.long)
+
+        embeddings = []
+        for offset in start_offsets:
+            embeddings.append(embedding[offset:offset + sequence_len, :].float())
+
+        if len(embeddings) == 1:
+            return embeddings[0], start_offsets
+        
+        embeddings = torch.stack(embeddings, dim=0)
+        return embeddings, start_offsets
+
 
     def __getitem__(self, index) -> JukeboxSample:
         if len(self.lvl) == 1:
-            return self.getitem(lvl=self.lvl[0], index=index, sequence_len=self.sequence_len)[0]
+            embeddings, _ = self.getitem(lvl=self.lvl[0], index=index, sequence_len=self.sequence_len)
+            return embeddings
 
         sample = {}
 
         # get the sample for the lowest lvl
-        embedding, start_offset = self.getitem(lvl=self.lvl[0], index=index, sequence_len=self.sequence_len)
+        embedding, start_offsets = self.getitem(lvl=self.lvl[0], index=index, sequence_len=self.sequence_len)
         sample[self.lvl[0]] = embedding
 
         # get the other samples
         for lvl in self.lvl[1:]:
             lvl_difference = lvl - self.min_lvl
             sequence_len = self.sequence_len // (4 ** lvl_difference)
-            offset = start_offset // (4 ** lvl_difference)
-            sample[lvl] = self.getitem(lvl, index, offset, sequence_len)[0]
+            offsets = torch.div(start_offsets, 4 ** lvl_difference, rounding_mode="floor")
+            sample[lvl] = self.getitem(lvl, index, offsets, sequence_len)[0]
 
         return sample
