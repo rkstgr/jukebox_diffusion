@@ -36,7 +36,9 @@ class JukeboxDiffusion(pl.LightningModule):
             generate_unconditional: bool = True,
             generate_continuation: bool = False,
             prompt_batch_idx: int = 0,
+            log_train_audio: bool = False,
             skip_audio_logging: bool = False,
+            load_vqvae: bool = True,
             *args,
             **kwargs,
     ):
@@ -59,11 +61,10 @@ class JukeboxDiffusion(pl.LightningModule):
         else:
             self.timestep_sampler = timestep_sampler
 
-        self.jukebox_vqvae = None
-        self.lr_scheduler = None
+        if load_vqvae:
+            self.jukebox_vqvae = self.load_jukebox_vqvae(os.environ["JUKEBOX_VQVAE_PATH"])
 
-    def prepare_data(self) -> None:
-        self.jukebox_vqvae = self.load_jukebox_vqvae(os.environ["JUKEBOX_VQVAE_PATH"])
+        self.lr_scheduler = None
 
     def forward(self, x):
         """Computes the loss
@@ -103,20 +104,22 @@ class JukeboxDiffusion(pl.LightningModule):
         self.log_dict({
             "train/loss": loss,
             "train/lr": self.lr_scheduler.get_last_lr()[0],
-        })
+        }, sync_dist=True)
 
-        if self.logger and batch_idx == 0 and self.current_epoch % 40 == 0:
-            audio = self.decode(batch[:self.hparams.inference_batch_size])
-            self.log_audio(audio, "train", f"epoch_{self.current_epoch}_batch_{batch_idx}")
+        if self.logger and batch_idx == 0 and self.current_epoch % 40 == 0 and self.hparams.log_train_audio:
+            with torch.no_grad():
+                audio = self.decode(x[:self.hparams.inference_batch_size])
+                self.log_audio(audio, "train", f"epoch_{self.current_epoch}_batch_{batch_idx}")
+                del audio
 
         return loss
 
     def validation_step(self, batch, batch_idx):
         x = self.preprocess(batch)
         loss = self(x)
-        self.log("val/loss", loss)
+        self.log("val/loss", loss, sync_dist=True)
         if self.logger and batch_idx == self.hparams.prompt_batch_idx:
-            audio = self.decode(x)
+            audio = self.decode(x[:self.hparams.inference_batch_size])
             self.log_audio(audio, "val", f"epoch_{self.current_epoch}")
             return x
 
@@ -175,12 +178,15 @@ class JukeboxDiffusion(pl.LightningModule):
         return vae
 
     @torch.no_grad()
-    def decode(self, embeddings):
+    def decode(self, embeddings, lvl=None):
+        if lvl is None:
+            lvl = self.hparams.jukebox_embedding_lvl
         embeddings = self.postprocess(embeddings)
         embeddings = rearrange(embeddings, "b t c -> b c t")
         # Use only lowest level
-        decoder = self.jukebox_vqvae.decoders[self.hparams.jukebox_embedding_lvl]
-        de_quantised_state = decoder([embeddings], all_levels=False)
+        decoder = self.jukebox_vqvae.decoders[lvl]
+        with torch.no_grad():
+            de_quantised_state = decoder([embeddings], all_levels=False)
         de_quantised_state = de_quantised_state.permute(0, 2, 1)
         return de_quantised_state
 

@@ -1,5 +1,5 @@
-from typing import Optional, List
 import warnings
+from typing import Optional, List
 
 import pytorch_lightning as pl
 import torch
@@ -9,8 +9,11 @@ from src.dataset.jukebox_dataset import JukeboxSample, JukeboxDataset
 
 
 def collate_fn(sample_list: List[JukeboxSample]):
-    sample_list = [torch.unsqueeze(item, 0) if item.ndim == 2 else item for item in sample_list]
-    return torch.cat(sample_list, dim=0)
+    if isinstance(sample_list[0], torch.Tensor):
+        sample_list = [torch.unsqueeze(item, 0) if item.ndim == 2 else item for item in sample_list]
+        return torch.cat(sample_list, dim=0)
+    elif isinstance(sample_list[0], dict):
+        return {key: collate_fn([item[key] for item in sample_list]) for key in sample_list[0].keys()}
 
 
 class JukeboxDataModule(pl.LightningDataModule):
@@ -36,6 +39,7 @@ class JukeboxDataModule(pl.LightningDataModule):
         **kwargs: Keyword arguments to be passed to the dataset.
     
     """
+
     def __init__(
             self,
             root_dir,
@@ -159,7 +163,7 @@ if __name__ == "__main__":
         100%|██████████| 69/69 [00:02<00:00, 29.80it/s]
         Time for second epoch: 2.316s
     """
-    
+
     import os
     from tqdm import tqdm
     import time
@@ -170,7 +174,7 @@ if __name__ == "__main__":
         lvl=2,
         batch_size=32,
         num_workers=8,
-        sequence_len=2048*4,
+        sequence_len=2048 * 4,
         samples_per_file=2,
         use_cache=True,
     )
@@ -182,7 +186,7 @@ if __name__ == "__main__":
     train_loader = dataloader.val_dataloader()
     for batch in tqdm(train_loader):
         pass
-    
+
     print(f"Time for first epoch: {time.time() - start:.3f}s")
 
     start = time.time()
