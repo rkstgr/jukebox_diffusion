@@ -67,7 +67,7 @@ class JukeboxDataset(Dataset):
 
     def load_file_paths(self, lvl):
         # check locally if files array is cached
-        cache_file = self.root_dir / f"files_cached_{self.split}_lvl{lvl}.v2.csv"
+        cache_file = self.root_dir / f"files_cached_{self.split}_lvl{lvl}.csv"
 
         if cache_file.exists():
             file_paths = pd.read_csv(cache_file).values.flatten()
@@ -75,7 +75,7 @@ class JukeboxDataset(Dataset):
 
         # all file_paths that have embeddings for this level and are in the split
         split_audio_files = set(self.metadata["audio_filename"].unique())
-        file_paths = [f.relative_to(self.root_dir) for f in self.root_dir.glob(f"**/*lvl{lvl}.v2.pt")]
+        file_paths = [f.relative_to(self.root_dir) for f in self.root_dir.glob(f"**/*lvl{lvl}.pt")]
         file_paths = [f for f in file_paths if str(f).split(".")[0] + ".wav" in split_audio_files]
 
         # filter out the every file which correspond to the last sample

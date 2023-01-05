@@ -1,23 +1,24 @@
 # @package _global_
 
-# maestro_unconditional_lvl2_unet_100M.yaml
+# maestro_upsample_lvl2
 
 defaults:
   - override /callbacks: default.yaml
   - override /trainer: default.yaml
   - override /datamodule: jukebox_datamodule.yaml
+  - override /model: jukebox_upsampler
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["maestro", "jukebox", "lvl2", "unconditional"]
+tags: ["maestro", "jukebox", "lvl2", "upsample"]
 
-seed: 19
+seed: 10
 
 trainer:
   log_every_n_steps: 10
-  check_val_every_n_epoch: 15
-  # accumulate_grad_batches: 2
+  check_val_every_n_epoch: 10
+  accumulate_grad_batches: 4
   # profiler: 
   #   _target_: pytorch_lightning.profiler.AdvancedProfiler
   #   dirpath: "/usr/stud/steiger/dev/jukebox_diffusion"
@@ -26,9 +27,9 @@ trainer:
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
-  num_workers: 4
-  lvl: 2
-  batch_size: 48
+  num_workers: 6
+  lvl: [2,1]
+  batch_size: 8
   sequence_len: 4096
   persistent_workers: false
   samples_per_file: 1
@@ -36,18 +37,20 @@ datamodule:
   pin_memory: true
 
 model:
+  generating_lvl: 1
+  conditioning_lvl: 2
   model:
     # 96Mil params
     _target_: src.module.diffusion_attn_unet_1d.DiffusionAttnUnet1D
     io_channels: 64
+    cond_channels: 64
     n_attn_layers: 6
-    channel_sizes: [128, 128, 128, 128,  256, 256, 256, 256,  512, 512, 512]
+    channel_sizes: [128, 128, 128, 256, 256, 256, 256, 512, 512]
   lr: 1e-4
   lr_warmup_steps: 4000
   num_train_timesteps: 1000
   inference_batch_size: 4
-  inference_seq_len: 4096
-  jukebox_embedding_lvl: 2
+  inference_seq_len: 2048
   noise_scheduler:
     _target_: diffusers.PNDMScheduler
     num_train_timesteps: 1000
@@ -58,8 +61,6 @@ model:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000
   num_inference_steps: 50
-  generate_unconditional: true
-  generate_continuation: false
   skip_audio_logging: false
 
 

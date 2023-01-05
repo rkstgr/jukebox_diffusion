@@ -70,7 +70,7 @@ class JukeboxDataModule(pl.LightningDataModule):
 
         if use_cache and num_workers == 0:
             warnings.warn("Cache is enabled but num_workers is 0. Please check if this was desired.")
-        self.persistent_workers = True if use_cache and num_workers > 0 else False
+        self.persistent_workers = False
 
         self.train_dataset = None
         self.val_dataset = None
@@ -174,8 +174,8 @@ if __name__ == "__main__":
         lvl=2,
         batch_size=32,
         num_workers=8,
-        sequence_len=2048 * 4,
-        samples_per_file=2,
+        sequence_len=4096,
+        samples_per_file=1,
         use_cache=True,
     )
     dataloader.setup()

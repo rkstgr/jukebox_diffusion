@@ -16,6 +16,7 @@ class DiffusionAttnUnet1D(nn.Module):
     def __init__(
             self,
             io_channels=2,
+            cond_channels=0,
             n_attn_layers=6,
             channel_sizes: Optional[List[int]] = None,
             latent_dim=0,
@@ -67,7 +68,7 @@ class DiffusionAttnUnet1D(nn.Module):
                 )
             else:
                 block = nn.Sequential(
-                    conv_block(io_channels + 16 + latent_dim, c, c),
+                    conv_block(io_channels + cond_channels + 16 + latent_dim, c, c),
                     conv_block(c, c, c),
                     conv_block(c, c, c),
                     block,
@@ -88,8 +89,6 @@ class DiffusionAttnUnet1D(nn.Module):
         :param cond: Currently not supported
         :return: (batch, seq_len, channels)
         """
-        if cond is not None:
-            raise NotImplementedError
 
         batch, seq_len, channels = x_in.shape
 
@@ -108,9 +107,16 @@ class DiffusionAttnUnet1D(nn.Module):
 
         inputs = [x_in, t_emb]
 
-        # if cond is not None:
-        #     cond = F.interpolate(cond, (x_in.shape[2],), mode='linear', align_corners=False)
-        #     inputs.append(cond)
+        if cond is not None:
+            cond = rearrange(
+                F.interpolate(
+                    rearrange(cond, "b s d -> b d s"), 
+                    x_in.shape[1], 
+                    mode='linear', 
+                    align_corners=False)
+                    , "b d s -> b s d"
+            )
+            inputs.append(cond)
 
         x_net = rearrange(torch.cat(inputs, dim=-1), "b t c -> b c t")
         out = self.net(x_net)  # net takes in (batch, channels, seq_len)
