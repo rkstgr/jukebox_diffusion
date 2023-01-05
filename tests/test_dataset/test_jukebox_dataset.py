@@ -1,16 +1,12 @@
 import os
 
-import pytest
-
 from src.dataset.jukebox_dataset import JukeboxDataset
+from tests.conftest import depends_on_maestro_dataset
 
 SEQUENCE_LEN = 2048
 DATA_DIMENSION = 64
 
-@pytest.mark.skipif(
-    "MAESTRO_DATASET_DIR" not in os.environ.keys(),
-    reason="Environment variable 'MAESTRO_DATASET_DIR' missing."
-)
+@depends_on_maestro_dataset
 def test_maestro_dataset():
     dataset = JukeboxDataset(
         root_dir=os.environ["MAESTRO_DATASET_DIR"],
@@ -23,10 +19,7 @@ def test_maestro_dataset():
     sample = dataset[0]
     assert sample.shape == (SEQUENCE_LEN, DATA_DIMENSION)
 
-@pytest.mark.skipif(
-    "MAESTRO_DATASET_DIR" not in os.environ.keys(),
-    reason="Environment variable 'MAESTRO_DATASET_DIR' missing."
-)
+@depends_on_maestro_dataset
 def test_maestro_dataset_multi_lvl():
     dataset = JukeboxDataset(
         root_dir=os.environ["MAESTRO_DATASET_DIR"],
@@ -42,7 +35,7 @@ def test_maestro_dataset_multi_lvl():
     assert sample[1].shape == (SEQUENCE_LEN//4,  DATA_DIMENSION)
     assert sample[0].shape == (SEQUENCE_LEN,     DATA_DIMENSION)
 
-
+@depends_on_maestro_dataset
 def test_maestro_dataset_multi_samples():
     dataset = JukeboxDataset(
         root_dir=os.environ["MAESTRO_DATASET_DIR"],
@@ -56,6 +49,7 @@ def test_maestro_dataset_multi_samples():
     sample = dataset[0]
     assert sample.shape == (2, SEQUENCE_LEN,     DATA_DIMENSION)
 
+@depends_on_maestro_dataset
 def test_maestro_dataset_multi_samples_multi_lvl():
     dataset = JukeboxDataset(
         root_dir=os.environ["MAESTRO_DATASET_DIR"],

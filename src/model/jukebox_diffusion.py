@@ -38,6 +38,7 @@ class JukeboxDiffusion(pl.LightningModule):
             prompt_batch_idx: int = 0,
             log_train_audio: bool = False,
             skip_audio_logging: bool = False,
+            load_vqvae: bool = True,
             *args,
             **kwargs,
     ):
@@ -60,7 +61,9 @@ class JukeboxDiffusion(pl.LightningModule):
         else:
             self.timestep_sampler = timestep_sampler
 
-        self.jukebox_vqvae = self.load_jukebox_vqvae(os.environ["JUKEBOX_VQVAE_PATH"])
+        if load_vqvae:
+            self.jukebox_vqvae = self.load_jukebox_vqvae(os.environ["JUKEBOX_VQVAE_PATH"])
+
         self.lr_scheduler = None
 
     def forward(self, x):

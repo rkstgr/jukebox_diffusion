@@ -13,6 +13,7 @@ def model():
             channel_sizes=[128, 128, 128, 128, 256],
             n_attn_layers=2
         ),
+        load_vqvae=False
     ).eval()
 
 
