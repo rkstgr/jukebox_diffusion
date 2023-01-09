@@ -1,4 +1,6 @@
 import math
+from pathlib import Path
+from typing import Optional
 
 import librosa
 import numpy as np
@@ -13,19 +15,24 @@ print_all = print
 
 
 class FilesAudioDataset(Dataset):
-    def __init__(self, root_dir, sr, channels, sample_length, min_duration=None, max_duration=None, labels=False,
-                 aug_shift=False):
+    def __init__(self, root_dir, sr, channels, sample_length,
+                 min_duration_sec=None,
+                 max_duration_sec=None,
+                 labels=False,
+                 aug_shift=False,
+                 filenames_whitelist: Optional[list[str]] = None,
+                 ):
         super().__init__()
         self.root_dir = root_dir
         self.sr = sr
         self.channels = channels
-        self.min_duration = min_duration or math.ceil(sample_length / sr)
-        self.max_duration = max_duration or math.inf
+        self.min_duration = min_duration_sec or math.ceil(sample_length / sr)
+        self.max_duration = max_duration_sec or math.inf
         self.sample_length = sample_length
-        assert sample_length / sr < self.min_duration, f'Sample length {sample_length} per sr {sr} ({sample_length / sr:.2f}) should be shorter than min duration {self.min_duration}'
+        assert sample_length / sr <= self.min_duration, f'Sample length {sample_length} per sr {sr} ({sample_length / sr:.2f}) should be shorter than min duration {self.min_duration}'
         self.aug_shift = aug_shift
         self.labels = False
-        self.init_dataset(root_dir)
+        self.init_dataset(root_dir, filenames_whitelist)
 
     def filter(self, files, durations):
         # Remove files too short or too long
@@ -42,12 +49,13 @@ class FilesAudioDataset(Dataset):
         self.durations = [int(durations[i]) for i in keep]
         self.cumsum = np.cumsum(self.durations)
 
-    def init_dataset(self, root_dir):
+    def init_dataset(self, root_dir, whitelist: Optional[list[str]] = None):
         # Load list of files and starts/durations
         files = librosa.util.find_files(f'{root_dir}', ext=['mp3', 'opus', 'm4a', 'aac', 'wav'])
+        if whitelist:
+            files = [f for f in files if Path(f).stem in whitelist]
         print_all(f"Found {len(files)} files. Getting durations")
-        cache = dist.get_rank() % 8 == 0 if dist.is_available() else True
-        durations = np.array([get_duration_sec(file, cache=cache) * self.sr for file in files])  # Could be approximate
+        durations = np.array([get_duration_sec(file, cache=True) * self.sr for file in files])  # Could be approximate
         self.filter(files, durations)
 
         # if self.labels:
@@ -115,6 +123,6 @@ if __name__ == '__main__':
     dist.init_process_group(backend='gloo', rank=0, world_size=1)
 
     dataset = FilesAudioDataset(root_dir=os.environ["MAESTRO_DATASET_DIR"], sr=44100, channels=2, sample_length=44100,
-                                min_duration=10)
+                                min_duration_sec=10)
     print("Dataset len:", len(dataset))
     print("Item shape", dataset[0].shape)
