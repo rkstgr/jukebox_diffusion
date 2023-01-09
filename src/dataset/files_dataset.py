@@ -18,7 +18,7 @@ class FilesAudioDataset(Dataset):
                  max_duration_sec=None,
                  labels=False,
                  aug_shift=False,
-                 filenames_whitelist: Optional[List[str]] = None,
+                 whitelist: Optional[List[str]] = None,
                  ):
         super().__init__()
         self.root_dir = root_dir
@@ -30,7 +30,7 @@ class FilesAudioDataset(Dataset):
         assert sample_length / sr <= self.min_duration, f'Sample length {sample_length} per sr {sr} ({sample_length / sr:.2f}) should be shorter than min duration {self.min_duration}'
         self.aug_shift = aug_shift
         self.labels = False
-        self.init_dataset(root_dir, filenames_whitelist)
+        self.init_dataset(root_dir, whitelist)
 
     def filter(self, files, durations):
         # Remove files too short or too long

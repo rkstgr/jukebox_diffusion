@@ -5,7 +5,7 @@
 defaults:
   - override /callbacks: default.yaml
   - override /trainer: default.yaml
-  - override /datamodule: jukebox_datamodule.yaml
+  - override /datamodule: maestro_datamodule.yaml
   - override /model: jukebox_upsampler
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -13,7 +13,7 @@ defaults:
 
 tags: ["maestro", "jukebox", "lvl2", "upsample"]
 
-seed: 10
+seed: 100
 
 trainer:
   log_every_n_steps: 10
@@ -27,18 +27,12 @@ trainer:
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
-  num_workers: 6
-  lvl: [2,1]
+  num_workers: 10
   batch_size: 8
-  sequence_len: 4096
-  persistent_workers: false
-  samples_per_file: 1
-  use_cache: false
-  pin_memory: true
 
 model:
-  generating_lvl: 1
-  conditioning_lvl: 2
+  source_lvl: 2
+  target_lvl: 1
   model:
     # 96Mil params
     _target_: src.module.diffusion_attn_unet_1d.DiffusionAttnUnet1D
@@ -47,7 +41,7 @@ model:
     n_attn_layers: 6
     channel_sizes: [128, 128, 128, 256, 256, 256, 256, 512, 512]
   lr: 1e-4
-  lr_warmup_steps: 4000
+  lr_warmup_steps: 2000
   num_train_timesteps: 1000
   inference_batch_size: 4
   inference_seq_len: 2048

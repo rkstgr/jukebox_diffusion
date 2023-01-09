@@ -23,8 +23,8 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
     def __init__(
             self,
             model: torch.nn.Module,
-            generating_lvl: int = 1,
-            conditioning_lvl: int = 2,
+            source_lvl: int = 2,
+            target_lvl: int = 1,
             lr: float = 1e-4,
             lr_warmup_steps: int = 1000,
             weight_decay: float = 1e-2,
@@ -61,9 +61,6 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         self.jukebox_vqvae = self.load_jukebox_vqvae(os.environ["JUKEBOX_VQVAE_PATH"])
         self.lr_scheduler = None
 
-    # def load_vqvae(self) -> None:
-    #     self.jukebox_vqvae = self.load_jukebox_vqvae(os.environ["JUKEBOX_VQVAE_PATH"])
-
     def forward(self, x, cond):
         """Computes the loss
 
@@ -88,56 +85,51 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
 
         return loss
 
-    @staticmethod
-    def preprocess(batch: torch.Tensor) -> torch.Tensor:
-        return batch / torch.tensor(10)
-
-    @staticmethod
-    def postprocess(batch: torch.Tensor) -> torch.Tensor:
-        return batch * torch.tensor(10)
-
     def training_step(self, batch, batch_idx):
-        cond = self.preprocess(batch[self.hparams.conditioning_lvl])
-        x = self.preprocess(batch[self.hparams.generating_lvl])
+        source = self.encode(batch, self.hparams.source_lvl)
+        target = self.encode(batch, self.hparams.target_lvl)
 
-        loss = self(x, cond)
+        loss = self(target, source)
         self.log_dict({
             "train/loss": loss,
             "train/lr": self.lr_scheduler.get_last_lr()[0],
         }, sync_dist=True)
 
         if self.logger and batch_idx == 0 and self.current_epoch % 100 == 0 and self.hparams.log_train_audio:
-            with torch.no_grad():
-                x_audio = self.decode(x[:self.hparams.inference_batch_size], self.hparams.generating_lvl)
-                c_audio = self.decode(cond[:self.hparams.inference_batch_size], self.hparams.conditioning_lvl)
-
-                self.log_audio(x_audio, f"train/lvl{self.hparams.generating_lvl}", f"epoch_{self.current_epoch}")
-                self.log_audio(c_audio, f"train/lvl{self.hparams.conditioning_lvl}", f"epoch_{self.current_epoch}")
+                source_audio = self.decode(source[:self.hparams.inference_batch_size], self.hparams.source_lvl)
+                target_audio = self.decode(target[:self.hparams.inference_batch_size], self.hparams.target_lvl)
+                
+                self.log_audio(source_audio, f"train/lvl{self.hparams.source_lvl}", f"epoch_{self.current_epoch}_source")
+                self.log_audio(target_audio, f"train/lvl{self.hparams.target_lvl}", f"epoch_{self.current_epoch}_target")
+                del source_audio, target_audio
 
         return loss
 
     def validation_step(self, batch, batch_idx):
-        x = self.preprocess(batch[self.hparams.generating_lvl])
-        cond = self.preprocess(batch[self.hparams.conditioning_lvl])
+        source = self.encode(batch, self.hparams.source_lvl)
+        target = self.encode(batch, self.hparams.target_lvl)
 
-        loss = self(x, cond)
+        loss = self(target, source)
         self.log("val/loss", loss, sync_dist=True)
 
         if self.logger and batch_idx == self.hparams.prompt_batch_idx:
-            x_audio = self.decode(x[:self.hparams.inference_batch_size], self.hparams.generating_lvl)
-            c_audio = self.decode(cond[:self.hparams.inference_batch_size], self.hparams.conditioning_lvl)
+            source_audio = self.decode(source[:self.hparams.inference_batch_size], self.hparams.source_lvl)
+            target_audio = self.decode(target[:self.hparams.inference_batch_size], self.hparams.target_lvl)
 
-            self.log_audio(x_audio, f"val/lvl{self.hparams.generating_lvl}", f"epoch_{self.current_epoch}")
-            self.log_audio(c_audio, f"val/lvl{self.hparams.conditioning_lvl}", f"epoch_{self.current_epoch}")
+            self.log_audio(source_audio, f"val/lvl{self.hparams.source_lvl}", f"epoch_{self.current_epoch}_source")
+            self.log_audio(target_audio, f"val/lvl{self.hparams.target_lvl}", f"epoch_{self.current_epoch}_target")
 
-            return x[:self.hparams.inference_batch_size], cond[:self.hparams.inference_batch_size]
+            return dict(
+                source=source,
+                target=target,
+            )
 
     def validation_epoch_end(self, outputs) -> None:
         if self.logger:
             seed = torch.randint(0, 1000000, (1,)).item()
 
             embeddings = self.generate_upsample(
-                cond=outputs[0][1],
+                source=outputs[0]["source"],
                 seed=seed,
             )
             audio = self.decode(embeddings, self.hparams.generating_lvl)
@@ -170,6 +162,24 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         vae.load_state_dict(torch.load(vae_path, map_location=self.device))
         vae.eval().to(self.device)
         return vae
+
+
+    @staticmethod
+    def preprocess(batch: torch.Tensor) -> torch.Tensor:
+        return batch / torch.tensor(8)
+
+    @staticmethod
+    def postprocess(batch: torch.Tensor) -> torch.Tensor:
+        return batch * torch.tensor(8)
+
+    @torch.no_grad()
+    def encode(self, audio: torch.Tensor, lvl: int):
+        audio = rearrange(audio, "b t c -> b c t")
+        encoder = self.jukebox_vqvae.encoders[lvl]
+        embeddings = encoder(audio)[-1]
+        embeddings = rearrange(embeddings, "b c t -> b t c")
+        embeddings = self.preprocess(embeddings)
+        return embeddings
 
     @torch.no_grad()
     def decode(self, embeddings, lvl):
@@ -207,7 +217,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         optimizer.step(closure=optimizer_closure)
         self.lr_scheduler.step()
 
-    def generate_upsample(self, cond, num_inference_steps=None, seed=None):
+    def generate_upsample(self, source, num_inference_steps=None, seed=None):
         if num_inference_steps is None:
             num_inference_steps = self.hparams.num_inference_steps
         generator = torch.Generator().manual_seed(seed) if seed is not None else None
