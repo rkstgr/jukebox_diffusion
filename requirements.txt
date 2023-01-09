@@ -17,12 +17,15 @@ hydra-optuna-sweeper==1.2.0
 # mlflow
 # comet-ml
 
+# --------- data / audio --------- #
+soundfile
+av
+pandas          # dataframes
+
 # --------- others --------- #
 pyrootutils     # standardizing the project root setup
 rich            # beautiful text formatting in terminal
 pytest          # tests
-soundfile       # reading and writing audio files
-pandas          # dataframes
 tqdm
 diffusers
 transformers
