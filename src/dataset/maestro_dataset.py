@@ -11,11 +11,6 @@ JukeboxSample = Union[torch.Tensor, Dict[int, torch.Tensor]]
 
 
 class MaestroDataset(Dataset):
-    """
-    Args:
-        lvl: the level of the embedding. Must be one of [0, 1, 2]
-    """
-
     def __init__(
             self,
             root_dir,

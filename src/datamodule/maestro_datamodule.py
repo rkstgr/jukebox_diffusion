@@ -58,27 +58,15 @@ class MaestroDataModule(pl.LightningDataModule):
 if __name__ == "__main__":
     """
     Env:
-        node2 with 19 cores and 140GB RAM
+        node3 with 16 cores
 
     Settings:
-        root_dir=os.environ["MAESTRO_DATASET_DIR"],
-        lvl=2,
-        batch_size=32,
-        num_workers=8,
-        sequence_len=2048*4,
-        samples_per_file=2,
-        use_cache=True,
+        batch_size: 32
+        num_workers: 16
 
     Results:
-        Time for setup: 0.095s
-        100%|██████████| 69/69 [00:42<00:00,  1.61it/s]
-        Time for first epoch: 42.985s
-        100%|██████████| 69/69 [00:02<00:00, 29.80it/s]
-        Time for second epoch: 2.316s
-        
-        
-    On mac with 0 workers:
-        4s/it
+        Time for setup: 25.130s
+        32%|███▏      | 580/1797 [02:45<04:43, 4.2it/s]
     """
 
     import os
@@ -89,7 +77,7 @@ if __name__ == "__main__":
     dataloader = MaestroDataModule(
         root_dir=os.environ["MAESTRO_DATASET_DIR"],
         batch_size=32,
-        num_workers=0,
+        num_workers=16,
     )
     dataloader.setup()
     print(f"Time for setup: {time.time() - start:.3f}s")

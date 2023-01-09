@@ -1,6 +1,6 @@
 import math
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 import librosa
 import numpy as np
@@ -8,8 +8,6 @@ import torch.distributed as dist
 from torch.utils.data import Dataset
 
 from src.utils.io import load_audio, get_duration_sec
-
-# from src.utils.dist import print_all
 
 print_all = print
 
@@ -20,7 +18,7 @@ class FilesAudioDataset(Dataset):
                  max_duration_sec=None,
                  labels=False,
                  aug_shift=False,
-                 filenames_whitelist: Optional[list[str]] = None,
+                 filenames_whitelist: Optional[List[str]] = None,
                  ):
         super().__init__()
         self.root_dir = root_dir
@@ -49,7 +47,7 @@ class FilesAudioDataset(Dataset):
         self.durations = [int(durations[i]) for i in keep]
         self.cumsum = np.cumsum(self.durations)
 
-    def init_dataset(self, root_dir, whitelist: Optional[list[str]] = None):
+    def init_dataset(self, root_dir, whitelist: Optional[List[str]] = None):
         # Load list of files and starts/durations
         files = librosa.util.find_files(f'{root_dir}', ext=['mp3', 'opus', 'm4a', 'aac', 'wav'])
         if whitelist:
@@ -95,8 +93,7 @@ class FilesAudioDataset(Dataset):
     def get_song_chunk(self, index, offset, test=False):
         filename, total_length = self.files[index], self.durations[index]
         data, sr = load_audio(filename, sr=self.sr, offset=offset, duration=self.sample_length)
-        assert data.shape == (
-            self.channels, self.sample_length), f'Expected {(self.channels, self.sample_length)}, got {data.shape}'
+        assert data.shape == (self.channels, self.sample_length), f'Expected {(self.channels, self.sample_length)}, got {data.shape}'
         if self.labels:
             artist, genre, lyrics = self.get_metadata(filename, test)
             labels = self.labeller.get_label(artist, genre, lyrics, total_length, offset)
