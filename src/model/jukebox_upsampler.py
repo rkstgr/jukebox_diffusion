@@ -116,6 +116,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             source_audio = self.decode(source[:self.hparams.inference_batch_size], self.hparams.source_lvl)
             target_audio = self.decode(target[:self.hparams.inference_batch_size], self.hparams.target_lvl)
 
+            self.log_audio(batch[:self.hparams.inference_batch_size], "val/original", f"epoch_{self.current_epoch}")
             self.log_audio(source_audio, f"val/lvl{self.hparams.source_lvl}", f"epoch_{self.current_epoch}_source")
             self.log_audio(target_audio, f"val/lvl{self.hparams.target_lvl}", f"epoch_{self.current_epoch}_target")
 
@@ -132,7 +133,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
                 source=outputs[0]["source"],
                 seed=seed,
             )
-            audio = self.decode(embeddings, self.hparams.generating_lvl)
+            audio = self.decode(embeddings, self.hparams.target_lvl)
             self.log_audio(audio, "val/upsampled", f"epoch_{self.current_epoch}_seed_{seed}")
 
         return super().validation_epoch_end(outputs)
@@ -228,7 +229,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         ).to(self.device)
 
         jukebox_latents = pipeline(
-            cond=cond,
+            cond=source,
             generator=generator,
             num_inference_steps=num_inference_steps,
         )

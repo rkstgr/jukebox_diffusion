@@ -24,31 +24,31 @@ def load_audio(file, sr, offset, duration, resample=True, approx=False, time_bas
         duration = duration * sr
     # Loads at target sr, stereo channels, seeks from offset, and stops after duration
     container = av.open(file)
-    audio = container.streams.get(audio=0)[0]  # Only first audio stream
-    audio_duration_sec = audio.duration * float(audio.time_base)
+    audio = container.streams.get(audio=0)[0] # Only first audio stream
+    audio_duration = audio.duration * float(audio.time_base)
     if approx:
-        raise NotImplementedError
-        if offset + duration > audio_duration * sr:
+        if offset + duration > audio_duration*sr:
             # Move back one window. Cap at audio_duration
-            offset = np.min(audio_duration * sr - duration, offset - duration)
+            offset = np.min(audio_duration*sr - duration, offset - duration)
     else:
         if check_duration:
-            assert offset + duration <= audio_duration_sec * sr, f'End {offset + duration} beyond duration {audio_duration_sec * sr}'
+            assert offset + duration <= audio_duration*sr, f'End {offset + duration} beyond duration {audio_duration*sr}'
     if resample:
-        resampler: AudioResampler = av.AudioResampler(format='fltp', layout='stereo', rate=sr)
+        resampler = av.AudioResampler(format='fltp',layout='stereo', rate=sr)
     else:
         assert sr == audio.sample_rate
-    offset_seconds = offset / sr
-    offset_time_base = int(offset_seconds / float(audio.time_base))
-    duration = int(duration)  # duration = int(duration * sr) # Use units of time_out ie 1/sr for returning
+    offset = int(offset / sr / float(audio.time_base)) #int(offset / float(audio.time_base)) # Use units of time_base for seeking
+    duration = int(duration) #duration = int(duration * sr) # Use units of time_out ie 1/sr for returning
     sig = np.zeros((2, duration), dtype=np.float32)
-    container.seek(offset_time_base, stream=audio)
+    container.seek(offset, stream=audio)
     total_read = 0
-    for frame in container.decode(audio=0):  # Only first audio stream
-        if resample and sr != audio.sample_rate:
+    for frame in container.decode(audio=0): # Only first audio stream
+        if resample:
             frame.pts = None
-            frame = resampler.resample(frame)[0]
-        frame = frame.to_ndarray(format='fltp')  # Convert to floats and not int16
+            frame = resampler.resample(frame)
+            assert len(frame) == 1
+            frame = frame[0]
+        frame = frame.to_ndarray(format='fltp') # Convert to floats and not int16
         read = frame.shape[-1]
         if total_read + read > duration:
             read = duration - total_read
