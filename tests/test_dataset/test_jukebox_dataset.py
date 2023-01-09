@@ -1,6 +1,6 @@
 import os
 
-from src.dataset.jukebox_dataset import JukeboxDataset
+from src.dataset.maestro_dataset import JukeboxDataset
 from tests.conftest import depends_on_maestro_dataset
 
 SEQUENCE_LEN = 2048

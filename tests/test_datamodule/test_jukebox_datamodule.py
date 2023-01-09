@@ -3,8 +3,9 @@ import os
 import pytest
 import torch
 
-from src.datamodule.jukebox_datamodule import JukeboxDataModule, collate_fn
+from src.datamodule.maestro_datamodule import JukeboxDataModule, collate_fn
 from tests.conftest import depends_on_maestro_dataset
+
 
 def test_collate_fn():
     x = [torch.rand(2048, 64) for _ in range(8)]
