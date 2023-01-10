@@ -166,7 +166,6 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         vae.eval().to(self.device)
         return vae
 
-
     @staticmethod
     def preprocess(batch: torch.Tensor) -> torch.Tensor:
         return batch / torch.tensor(8)

@@ -24,7 +24,7 @@ class JukeboxDiffusion(pl.LightningModule):
     def __init__(
             self,
             model: torch.nn.Module,
-            jukebox_embedding_lvl: int = 0,
+            target_lvl: int = 0,
             lr: float = 1e-4,
             lr_warmup_steps: int = 1000,
             weight_decay: float = 1e-2,
@@ -90,17 +90,9 @@ class JukeboxDiffusion(pl.LightningModule):
 
         return loss
 
-    @staticmethod
-    def preprocess(batch: torch.Tensor) -> torch.Tensor:
-        return batch / torch.tensor(10)
-
-    @staticmethod
-    def postprocess(batch: torch.Tensor) -> torch.Tensor:
-        return batch * torch.tensor(10)
-
     def training_step(self, batch, batch_idx):
-        x = self.preprocess(batch)
-        loss = self(x)
+        target = self.encode(batch)
+        loss = self(target)
         self.log_dict({
             "train/loss": loss,
             "train/lr": self.lr_scheduler.get_last_lr()[0],
@@ -108,14 +100,14 @@ class JukeboxDiffusion(pl.LightningModule):
 
         if self.logger and batch_idx == 0 and self.current_epoch % 40 == 0 and self.hparams.log_train_audio:
             with torch.no_grad():
-                audio = self.decode(x[:self.hparams.inference_batch_size])
+                audio = self.decode(target[:self.hparams.inference_batch_size])
                 self.log_audio(audio, "train", f"epoch_{self.current_epoch}_batch_{batch_idx}")
                 del audio
 
         return loss
 
     def validation_step(self, batch, batch_idx):
-        x = self.preprocess(batch)
+        x = self.encode(batch)
         loss = self(x)
         self.log("val/loss", loss, sync_dist=True)
         if self.logger and batch_idx == self.hparams.prompt_batch_idx:
@@ -129,7 +121,7 @@ class JukeboxDiffusion(pl.LightningModule):
 
             embeddings = self.generate_unconditionally(
                 batch_size=self.hparams.inference_batch_size,
-                seq_len=self.hparams.inference_seq_len,
+                seq_len=outputs[0].shape[1],
                 seed=seed,
             )
             audio = self.decode(embeddings)
@@ -177,10 +169,29 @@ class JukeboxDiffusion(pl.LightningModule):
         vae.eval().to(self.device)
         return vae
 
+    @staticmethod
+    def preprocess(batch: torch.Tensor) -> torch.Tensor:
+        return batch / torch.tensor(8)
+
+    @staticmethod
+    def postprocess(batch: torch.Tensor) -> torch.Tensor:
+        return batch * torch.tensor(8)
+
+    @torch.no_grad()
+    def encode(self, audio: torch.Tensor, lvl=None):
+        if lvl is None:
+            lvl = self.hparams.target_lvl
+        audio = rearrange(audio, "b t c -> b c t")
+        encoder = self.jukebox_vqvae.encoders[lvl]
+        embeddings = encoder(audio)[-1]
+        embeddings = rearrange(embeddings, "b c t -> b t c")
+        embeddings = self.preprocess(embeddings)
+        return embeddings
+
     @torch.no_grad()
     def decode(self, embeddings, lvl=None):
         if lvl is None:
-            lvl = self.hparams.jukebox_embedding_lvl
+            lvl = self.hparams.target_lvl
         embeddings = self.postprocess(embeddings)
         embeddings = rearrange(embeddings, "b t c -> b c t")
         # Use only lowest level
@@ -194,8 +205,8 @@ class JukeboxDiffusion(pl.LightningModule):
     def quantize_and_decode(self, embeddings):
         """Quantize the embeddings with the VQ-VAE first and then decode them"""
         embeddings = rearrange(embeddings, "b t c -> b c t")
-        music_tokens = self.jukebox_vqvae.bottleneck.level_blocks[self.hparams.jukebox_embedding_lvl].encode(embeddings)
-        latent_states = self.jukebox_vqvae.bottleneck.level_blocks[self.hparams.jukebox_embedding_lvl].decode(
+        music_tokens = self.jukebox_vqvae.bottleneck.level_blocks[self.hparams.target_lvl].encode(embeddings)
+        latent_states = self.jukebox_vqvae.bottleneck.level_blocks[self.hparams.target_lvl].decode(
             music_tokens)
         latent_states = rearrange(latent_states, "b c t -> b t c")
         return self.decode(latent_states)
