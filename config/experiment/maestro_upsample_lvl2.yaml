@@ -17,17 +17,13 @@ seed: 100
 
 trainer:
   log_every_n_steps: 10
-  accumulate_grad_batches: 2
-  # profiler: 
-  #   _target_: pytorch_lightning.profiler.AdvancedProfiler
-  #   dirpath: "/usr/stud/steiger/dev/jukebox_diffusion"
-  #   filename: "profiling_results2"
-  # max_steps: 100
+  gradient_clip_val: 1
+  accumulate_grad_batches: 4
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
-  num_workers: 10
-  batch_size: 10
+  num_workers: 8
+  batch_size: 8
   sample_length: 131072 # 1.5s
 
 model:
@@ -44,7 +40,6 @@ model:
   lr_warmup_steps: 2000
   num_train_timesteps: 1000
   inference_batch_size: 4
-  inference_seq_len: 2048
   noise_scheduler:
     _target_: diffusers.PNDMScheduler
     num_train_timesteps: 1000
@@ -54,7 +49,7 @@ model:
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000
-  num_inference_steps: 50
+  num_inference_steps: 80
   skip_audio_logging: false
 
 

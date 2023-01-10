@@ -30,7 +30,6 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             weight_decay: float = 1e-2,
             num_inference_steps: int = 50,
             inference_batch_size: int = 1,
-            inference_seq_len: int = 2048,
             noise_scheduler: Optional[SchedulerMixin] = None,
             timestep_sampler: Optional[DiffusionTimestepSampler] = None,
             prompt_batch_idx: int = 0,
@@ -131,8 +130,11 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
 
             embeddings = self.generate_upsample(
                 source=outputs[0]["source"],
+                target_shape=outputs[0]["target"].shape,
                 seed=seed,
             )
+            assert embeddings.shape == outputs[0]["target"].shape, f"Generated embeddings shape mismatch: {embeddings.shape} != {outputs[0]['target'].shape}"
+
             audio = self.decode(embeddings, self.hparams.target_lvl)
             self.log_audio(audio, "val/upsampled", f"epoch_{self.current_epoch}_seed_{seed}")
 
@@ -218,7 +220,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         optimizer.step(closure=optimizer_closure)
         self.lr_scheduler.step()
 
-    def generate_upsample(self, source, num_inference_steps=None, seed=None):
+    def generate_upsample(self, source: torch.Tensor, target_shape: torch.Size, num_inference_steps=None, seed=None):
         if num_inference_steps is None:
             num_inference_steps = self.hparams.num_inference_steps
         generator = torch.Generator().manual_seed(seed) if seed is not None else None
@@ -229,7 +231,8 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         ).to(self.device)
 
         jukebox_latents = pipeline(
-            cond=source,
+            source=source,
+            target_shape=target_shape,
             generator=generator,
             num_inference_steps=num_inference_steps,
         )

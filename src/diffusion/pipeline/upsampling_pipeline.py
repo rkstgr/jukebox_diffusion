@@ -19,7 +19,8 @@ class UpsamplingPipeline(SequencePipeline):
     @torch.no_grad()
     def __call__(
             self,
-            cond: torch.Tensor,
+            source: torch.Tensor,
+            target_shape: torch.Size,
             generator: Optional[torch.Generator] = None,
             num_inference_steps: int = 50,
             **kwargs,
@@ -39,8 +40,8 @@ class UpsamplingPipeline(SequencePipeline):
         Returns:
             `torch.Tensor`: The generated sequence.
         """
-        batch_size = cond.shape[0]
-        seq_len = cond.shape[1]
+        batch_size = source.shape[0]
+        seq_len = target_shape[1]
 
         # Sample gaussian noise to begin loop
         seq = torch.randn(
@@ -54,7 +55,7 @@ class UpsamplingPipeline(SequencePipeline):
 
         for t in self.progress_bar(self.scheduler.timesteps):
             # 1. predict noise model_output
-            model_output = self.unet(seq, t, cond)
+            model_output = self.unet(seq, t, source)
 
             # 2. predict previous mean of seq x_t-1 and add variance depending on eta
             # do x_t -> x_t-1
