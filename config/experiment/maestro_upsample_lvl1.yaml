@@ -1,6 +1,6 @@
 # @package _global_
 
-# maestro_upsample_lvl2
+# maestro_upsample_lvl1
 
 defaults:
   - override /callbacks: default.yaml
@@ -11,7 +11,7 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["maestro", "jukebox", "lvl2", "upsample"]
+tags: ["maestro", "jukebox", "lvl1", "upsample"]
 
 seed: 100
 
@@ -24,13 +24,12 @@ datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 8
   batch_size: 8
-  sample_length: 131072 # ~2.9s
+  sample_length: 32768 # ~2.9s
 
 model:
-  source_lvl: 2
-  target_lvl: 1
+  source_lvl: 1
+  target_lvl: 0
   model:
-    # 96Mil params
     _target_: src.module.diffusion_attn_unet_1d.DiffusionAttnUnet1D
     io_channels: 64
     cond_channels: 64
@@ -39,7 +38,7 @@ model:
   lr: 1e-4
   lr_warmup_steps: 2000
   num_train_timesteps: 1000
-  inference_batch_size: 4
+  inference_batch_size: 8
   noise_scheduler:
     _target_: diffusers.PNDMScheduler
     num_train_timesteps: 1000

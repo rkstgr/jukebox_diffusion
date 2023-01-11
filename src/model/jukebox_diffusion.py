@@ -24,7 +24,7 @@ class JukeboxDiffusion(pl.LightningModule):
     def __init__(
             self,
             model: torch.nn.Module,
-            target_lvl: int = 0,
+            target_lvl: int = 2,
             lr: float = 1e-4,
             lr_warmup_steps: int = 1000,
             weight_decay: float = 1e-2,

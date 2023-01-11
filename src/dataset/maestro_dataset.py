@@ -38,7 +38,6 @@ class MaestroDataset(Dataset):
         self.metadata = pd.read_csv(self.metadata_file).query("split == @self.split")
         whitelist = [Path(f).stem for f in self.metadata.audio_filename]
         self.dataset = FilesAudioDataset(root_dir=self.root_dir, sr=44100, channels=2, sample_length=sample_length,
-                                         min_duration_sec=10,
                                          whitelist=whitelist)
 
     def __len__(self):

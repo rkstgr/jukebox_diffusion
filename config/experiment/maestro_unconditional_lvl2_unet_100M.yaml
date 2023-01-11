@@ -5,37 +5,28 @@
 defaults:
   - override /callbacks: default.yaml
   - override /trainer: default.yaml
-  - override /datamodule: jukebox_datamodule.yaml
+  - override /datamodule: maestro_datamodule.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
 tags: ["maestro", "jukebox", "lvl2", "unconditional"]
 
-seed: 19
+seed: 100
 
 trainer:
   log_every_n_steps: 10
-  check_val_every_n_epoch: 15
-  # accumulate_grad_batches: 2
-  # profiler: 
-  #   _target_: pytorch_lightning.profiler.AdvancedProfiler
-  #   dirpath: "/usr/stud/steiger/dev/jukebox_diffusion"
-  #   filename: "profiling_results2"
-  # max_steps: 100
+  gradient_clip_val: 1
+  accumulate_grad_batches: 4
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
-  num_workers: 4
-  lvl: 2
-  batch_size: 48
-  sequence_len: 4096
-  persistent_workers: false
-  samples_per_file: 1
-  use_cache: false
-  pin_memory: true
+  num_workers: 8
+  batch_size: 32
+  sample_length: 524288  # ~11.8s
 
 model:
+  target_lvl: 2
   model:
     # 96Mil params
     _target_: src.module.diffusion_attn_unet_1d.DiffusionAttnUnet1D
@@ -43,11 +34,9 @@ model:
     n_attn_layers: 6
     channel_sizes: [128, 128, 128, 128,  256, 256, 256, 256,  512, 512, 512]
   lr: 1e-4
-  lr_warmup_steps: 4000
-  num_train_timesteps: 1000
+  lr_warmup_steps: 2000
+  num_train_timesteps: 10
   inference_batch_size: 4
-  inference_seq_len: 4096
-  jukebox_embedding_lvl: 2
   noise_scheduler:
     _target_: diffusers.PNDMScheduler
     num_train_timesteps: 1000
@@ -57,7 +46,7 @@ model:
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000
-  num_inference_steps: 50
+  num_inference_steps: 80
   generate_unconditional: true
   generate_continuation: false
   skip_audio_logging: false
@@ -67,8 +56,5 @@ logger:
   wandb:
     project: "jukebox_diffusion"
     tags: ${tags}
-    # settings:
-    #   _target_: wandb.Settings
-    #   start_method: "fork"
   tensorboard:
     name: "jukebox_diffusion"
