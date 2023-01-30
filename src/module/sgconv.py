@@ -4,6 +4,7 @@ import math
 from functools import partial
 
 import opt_einsum as oe
+from src.module.integer_encoding import IntegerFourierEmbedding
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -496,11 +497,14 @@ class SGConvBlock(nn.Module):
             l_max=2048 * 8, kernel_dim=64
         )
         self.ff2 = nn.Linear(input_dim, input_dim)
+        self.norm = nn.LayerNorm(input_dim)
 
-    def forward(self, x):
-        x = self.act1(self.ff1(x))
+    def forward(self, x_in):
+        x = self.act1(self.ff1(x_in))
         x = self.gconv(x, return_kernel=False)[0]
         x = self.act2(self.ff2(x))
+        x = x + x_in
+        x = self.norm(x)
         return x
 
 
@@ -520,7 +524,7 @@ class GConvStacked(nn.Module):
         self.model = nn.ModuleList(
             [SGConvBlock(d_model, channels, bidirectional, dropout) for _ in range(n_layers)])
 
-    def forward(self, x, t):
+    def forward(self, x):
         # x = [batch size, seq len, d_model]
         for layer in self.model:
             x = layer(x)
@@ -538,9 +542,14 @@ class GConvStackedDiffusion(nn.Module):
         transposed
     """
 
-    def __init__(self, d_model, channels, bidirectional=True, dropout=0.0, n_layers=10):
+    def __init__(self, input_data_dim, channels, bidirectional=True, dropout=0.0, n_layers=10,  time_emb_dim=16):
         super().__init__()
-        self.model = GConvStacked(d_model, channels, bidirectional, dropout, n_layers)
+        self.input_data_dim = input_data_dim
+        self.timestep_embed = IntegerFourierEmbedding(time_emb_dim, min_index=0, max_index=1000)
+        self.model = GConvStacked(input_data_dim+time_emb_dim, channels, bidirectional, dropout, n_layers)
+        self.ff = nn.Linear(input_data_dim+time_emb_dim, input_data_dim)
+
+        self.output_dim = input_data_dim
 
     def forward(self, x_in, t, cond=None):
         """
@@ -562,7 +571,7 @@ class GConvStackedDiffusion(nn.Module):
             assert t.shape[1] == seq_len, "Sequence length mismatch between t and x_in"
 
         # move t to device
-        t = t.to(x_in.device)
+        t = t.to(x_in.device).long()
         t_emb = self.timestep_embed(t)  # (batch, seq_len, 16)
 
         inputs = [x_in, t_emb]
@@ -580,7 +589,16 @@ class GConvStackedDiffusion(nn.Module):
 
         x_net = torch.cat(inputs, dim=-1)
         out = self.model(x_net)
+        out = self.ff(out)
         return out
+
+    @property
+    def device(self):
+        return next(self.model.parameters()).device
+
+    @property
+    def dtype(self):
+        return next(self.model.parameters()).dtype
 
 
 if __name__ == "__main__":
