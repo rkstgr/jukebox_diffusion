@@ -27,7 +27,6 @@ class JukeboxDiffusion(pl.LightningModule):
             target_lvl: int = 2,
             lr: float = 1e-4,
             lr_warmup_steps: int = 1000,
-            weight_decay: float = 1e-2,
             num_inference_steps: int = 50,
             inference_batch_size: int = 1,
             noise_scheduler: Optional[SchedulerMixin] = None,
@@ -177,8 +176,8 @@ class JukeboxDiffusion(pl.LightningModule):
         if self.hparams.clip_latents:
             normalized_batch = torch.clamp(normalized_batch, -1, 1)
         return normalized_batch
-
-    def postprocess(batch: torch.Tensor) -> torch.Tensor:
+    
+    def postprocess(self, batch: torch.Tensor) -> torch.Tensor:
         return batch * torch.tensor(8)
 
     @torch.no_grad()
