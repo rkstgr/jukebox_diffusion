@@ -30,7 +30,6 @@ class JukeboxDiffusion(pl.LightningModule):
             weight_decay: float = 1e-2,
             num_inference_steps: int = 50,
             inference_batch_size: int = 1,
-            inference_seq_len: int = 2048,
             noise_scheduler: Optional[SchedulerMixin] = None,
             timestep_sampler: Optional[DiffusionTimestepSampler] = None,
             generate_unconditional: bool = True,
@@ -39,6 +38,7 @@ class JukeboxDiffusion(pl.LightningModule):
             log_train_audio: bool = False,
             skip_audio_logging: bool = False,
             load_vqvae: bool = True,
+            clip_latents: bool = True,
             *args,
             **kwargs,
     ):
@@ -98,7 +98,7 @@ class JukeboxDiffusion(pl.LightningModule):
             "train/lr": self.lr_scheduler.get_last_lr()[0],
         }, sync_dist=True)
 
-        if self.logger and batch_idx == 0 and self.current_epoch % 40 == 0 and self.hparams.log_train_audio:
+        if self.logger and batch_idx == 0 and self.current_epoch % 100 == 0 and self.hparams.log_train_audio:
             with torch.no_grad():
                 audio = self.decode(target[:self.hparams.inference_batch_size])
                 self.log_audio(audio, "train", f"epoch_{self.current_epoch}_batch_{batch_idx}")
@@ -108,6 +108,7 @@ class JukeboxDiffusion(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x = self.encode(batch)
+        print(x.shape)
         loss = self(x)
         self.log("val/loss", loss, sync_dist=True)
         if self.logger and batch_idx == self.hparams.prompt_batch_idx:
@@ -129,17 +130,19 @@ class JukeboxDiffusion(pl.LightningModule):
 
         if self.logger and len(outputs) > 0 and self.hparams.generate_continuation:
             seed = torch.randint(0, 1000000, (1,)).item()
-            prompt = outputs[0][:self.hparams.inference_batch_size, :self.hparams.inference_seq_len // 2]
+            sample = outputs[0]
+            seq_len = sample.shape[1]
+            prompt = sample[:self.hparams.inference_batch_size, :seq_len // 2]
             embeddings = self.generate_continuation(
                 prompt=prompt,
                 seed=seed,
                 num_inference_steps=self.hparams.num_inference_steps,
             )
             audio = self.decode(embeddings)
-            self.log_audio(audio, "prompt_continuation", f"epoch_{self.current_epoch}_seed_{seed}")
+            self.log_audio(audio, "val/continuation", f"epoch_{self.current_epoch}_seed_{seed}")
             # log original prompt
             audio = self.decode(prompt)
-            self.log_audio(audio, "prompt_original", f"epoch_{self.current_epoch}_seed_{seed}")
+            self.log_audio(audio, "val/prompt", f"epoch_{self.current_epoch}_seed_{seed}")
 
         return super().validation_epoch_end(outputs)
 
@@ -169,11 +172,12 @@ class JukeboxDiffusion(pl.LightningModule):
         vae.eval().to(self.device)
         return vae
 
-    @staticmethod
-    def preprocess(batch: torch.Tensor) -> torch.Tensor:
-        return batch / torch.tensor(8)
+    def preprocess(self, batch: torch.Tensor) -> torch.Tensor:
+        normalized_batch = batch / torch.tensor(8)
+        if self.hparams.clip_latents:
+            normalized_batch = torch.clamp(normalized_batch, -1, 1)
+        return normalized_batch
 
-    @staticmethod
     def postprocess(batch: torch.Tensor) -> torch.Tensor:
         return batch * torch.tensor(8)
 
@@ -212,10 +216,9 @@ class JukeboxDiffusion(pl.LightningModule):
         return self.decode(latent_states)
 
     def configure_optimizers(self):
-        optim = torch.optim.AdamW(
+        optim = torch.optim.Adam(
             self.model.parameters(),
             lr=self.hparams.lr,
-            weight_decay=self.hparams.weight_decay,
         )
 
         # don't return, handled manually in optimizer step
@@ -274,5 +277,6 @@ class JukeboxDiffusion(pl.LightningModule):
             batch_size=batch_size,
             seq_len=seq_len,
             num_inference_steps=num_inference_steps,
+            clip=self.hparams.clip_latents,
         )
         return jukebox_latents
