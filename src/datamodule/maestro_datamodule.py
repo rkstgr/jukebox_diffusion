@@ -38,8 +38,8 @@ class MaestroDataModule(pl.LightningDataModule):
         self.test_dataset = None
 
     def setup(self, stage=None):
-        self.train_dataset = MaestroDataset(self.root_dir, split="train", sample_length=self.sample_length)
-        self.val_dataset = MaestroDataset(self.root_dir, split="validation", sample_length=self.sample_length)
+        self.train_dataset = MaestroDataset(self.root_dir, split="train", sample_length=self.sample_length, aug_shift=True)
+        self.val_dataset = MaestroDataset(self.root_dir, split="validation", sample_length=self.sample_length, shuffle=True) # shuffle only once on initialization
         self.test_dataset = MaestroDataset(self.root_dir, split="test", sample_length=self.sample_length)
 
     def train_dataloader(self):
