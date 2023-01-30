@@ -155,4 +155,4 @@ logs/
 wandb/
 
 # SLURM Scripts
-train.sbatch
+*.sbatch
