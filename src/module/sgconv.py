@@ -7,7 +7,7 @@ import opt_einsum as oe
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange
+from einops import rearrange, repeat
 
 optimized = True
 
@@ -490,9 +490,10 @@ class SGConvBlock(nn.Module):
         super().__init__()
         self.act1 = nn.GLU()
         self.act2 = nn.GELU()
-        self.ff1 = nn.Linear(input_dim, input_dim*2)
+        self.ff1 = nn.Linear(input_dim, input_dim * 2)
         self.gconv = GConv(
-            input_dim, channels=channels, bidirectional=bidirectional, dropout=dropout, transposed=False, l_max=2048*8, kernel_dim=64
+            input_dim, channels=channels, bidirectional=bidirectional, dropout=dropout, transposed=False,
+            l_max=2048 * 8, kernel_dim=64
         )
         self.ff2 = nn.Linear(input_dim, input_dim)
 
@@ -519,11 +520,67 @@ class GConvStacked(nn.Module):
         self.model = nn.ModuleList(
             [SGConvBlock(d_model, channels, bidirectional, dropout) for _ in range(n_layers)])
 
-    def forward(self, x):
+    def forward(self, x, t):
         # x = [batch size, seq len, d_model]
         for layer in self.model:
             x = layer(x)
         return x
+
+
+class GConvStackedDiffusion(nn.Module):
+    """
+        d_state: the dimension of the state, also denoted by N
+        l_max: the maximum sequence length, also denoted by L
+          if this is not known at model creation, set l_max=1
+        channels: can be interpreted as a number of "heads"
+        bidirectional: bidirectional
+        dropout: standard dropout argument
+        transposed
+    """
+
+    def __init__(self, d_model, channels, bidirectional=True, dropout=0.0, n_layers=10):
+        super().__init__()
+        self.model = GConvStacked(d_model, channels, bidirectional, dropout, n_layers)
+
+    def forward(self, x_in, t, cond=None):
+        """
+        :param x_in: (batch, seq_len, channels)
+        :param t: (), (batch) or (batch, seq_len)
+        :param cond: Currently not supported
+        :return: (batch, seq_len, channels)
+        """
+
+        batch, seq_len, channels = x_in.shape
+
+        # expand t to (batch)
+        if t.dim() == 0:
+            t = t.unsqueeze(0).expand(batch)
+        if t.dim() == 1:
+            t = repeat(t, "b -> b t", t=seq_len)
+        if t.dim() == 2:
+            assert t.shape[0] == batch, "Batch size mismatch between t and x_in"
+            assert t.shape[1] == seq_len, "Sequence length mismatch between t and x_in"
+
+        # move t to device
+        t = t.to(x_in.device)
+        t_emb = self.timestep_embed(t)  # (batch, seq_len, 16)
+
+        inputs = [x_in, t_emb]
+
+        if cond is not None:
+            cond = rearrange(
+                F.interpolate(
+                    rearrange(cond, "b s d -> b d s"),
+                    x_in.shape[1],
+                    mode='linear',
+                    align_corners=False)
+                , "b d s -> b s d"
+            )
+            inputs.append(cond)
+
+        x_net = torch.cat(inputs, dim=-1)
+        out = self.model(x_net)
+        return out
 
 
 if __name__ == "__main__":
