@@ -172,13 +172,10 @@ class JukeboxDiffusion(pl.LightningModule):
         return vae
 
     def preprocess(self, batch: torch.Tensor) -> torch.Tensor:
-        normalized_batch = batch / torch.tensor(8)
-        if self.hparams.clip_latents:
-            normalized_batch = torch.clamp(normalized_batch, -1, 1)
-        return normalized_batch
+        return batch
     
     def postprocess(self, batch: torch.Tensor) -> torch.Tensor:
-        return batch * torch.tensor(8)
+        return batch
 
     @torch.no_grad()
     def encode(self, audio: torch.Tensor, lvl=None):

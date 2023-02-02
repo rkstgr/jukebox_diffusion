@@ -12,31 +12,29 @@ defaults:
 
 tags: ["maestro", "jukebox", "lvl2", "unconditional"]
 
-seed: 101
+seed: 100
 
 trainer:
   log_every_n_steps: 10
-  accumulate_grad_batches: 4
+  accumulate_grad_batches: 8
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 8
-  batch_size: 20
+  batch_size: 64
   sample_length: 262144  # ~5.9s
 
 model:
   target_lvl: 2
   model:
-    _target_: src.module.sgconv.GConvStackedDiffusion
-    input_data_dim: 64
-    channels: 32
-    bidirectional: true
-    dropout: 0.05
-    n_layers: 24
-    time_emb_dim: 32
+    # 96Mil params
+    _target_: src.module.diffusion_attn_unet_1d.DiffusionAttnUnet1D
+    io_channels: 64
+    n_attn_layers: 6
+    channel_sizes: [128, 128, 128, 128,  256, 256, 256, 256, 512, 512]
   lr: 1e-4
-  lr_warmup_steps: 200
-  inference_batch_size: 16
+  lr_warmup_steps: 2000
+  inference_batch_size: 8
   noise_scheduler:
     _target_: diffusers.DPMSolverMultistepScheduler
     num_train_timesteps: 1000
@@ -48,7 +46,7 @@ model:
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000
-  num_inference_steps: 80
+  num_inference_steps: 100
   generate_unconditional: true
   generate_continuation: false
   skip_audio_logging: false

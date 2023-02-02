@@ -20,7 +20,7 @@ class UpsamplingPipeline(SequencePipeline):
     def __call__(
             self,
             source: torch.Tensor,
-            target_shape: torch.Size,
+            target_seq_len: int,
             generator: Optional[torch.Generator] = None,
             num_inference_steps: int = 50,
             **kwargs,
@@ -41,11 +41,10 @@ class UpsamplingPipeline(SequencePipeline):
             `torch.Tensor`: The generated sequence.
         """
         batch_size = source.shape[0]
-        seq_len = target_shape[1]
 
         # Sample gaussian noise to begin loop
         seq = torch.randn(
-            (batch_size, seq_len, self.unet.output_dim),
+            (batch_size, target_seq_len, self.unet.output_dim),
             generator=generator,
         )
         seq = seq.to(self.device)

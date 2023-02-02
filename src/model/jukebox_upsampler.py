@@ -130,7 +130,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
 
             embeddings = self.generate_upsample(
                 source=outputs[0]["source"],
-                target_shape=outputs[0]["target"].shape,
+                target_seq_len=outputs[0]["target"].shape[1],
                 seed=seed,
             )
             assert embeddings.shape == outputs[0]["target"].shape, f"Generated embeddings shape mismatch: {embeddings.shape} != {outputs[0]['target'].shape}"
@@ -219,7 +219,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         optimizer.step(closure=optimizer_closure)
         self.lr_scheduler.step()
 
-    def generate_upsample(self, source: torch.Tensor, target_shape: torch.Size, num_inference_steps=None, seed=None):
+    def generate_upsample(self, source: torch.Tensor, target_seq_len: int, num_inference_steps=None, seed=None):
         if num_inference_steps is None:
             num_inference_steps = self.hparams.num_inference_steps
         generator = torch.Generator().manual_seed(seed) if seed is not None else None
@@ -231,7 +231,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
 
         jukebox_latents = pipeline(
             source=source,
-            target_shape=target_shape,
+            target_seq_len=target_seq_len,
             generator=generator,
             num_inference_steps=num_inference_steps,
         )
