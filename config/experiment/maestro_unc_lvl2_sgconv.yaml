@@ -22,7 +22,7 @@ datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 8
   batch_size: 20
-  sample_length: 262144  # ~5.9s
+  sample_length: 262144  # ~5.9s -> 2048 lvl 0 tokens
 
 model:
   target_lvl: 2

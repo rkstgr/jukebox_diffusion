@@ -91,6 +91,9 @@ class JukeboxDiffusion(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         target = self.encode(batch)
+        if batch_idx == 0:
+            print("Shape:", target.shape)
+            
         loss = self(target)
         self.log_dict({
             "train/loss": loss,
