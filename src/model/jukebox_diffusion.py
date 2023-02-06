@@ -38,6 +38,7 @@ class JukeboxDiffusion(pl.LightningModule):
             skip_audio_logging: bool = False,
             load_vqvae: bool = True,
             clip_latents: bool = True,
+            weight_decay: float = 0.01,
             *args,
             **kwargs,
     ):
@@ -93,7 +94,7 @@ class JukeboxDiffusion(pl.LightningModule):
         target = self.encode(batch)
         if batch_idx == 0:
             print("Shape:", target.shape)
-            
+
         loss = self(target)
         self.log_dict({
             "train/loss": loss,
@@ -110,7 +111,6 @@ class JukeboxDiffusion(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x = self.encode(batch)
-        print(x.shape)
         loss = self(x)
         self.log("val/loss", loss, sync_dist=True)
         if self.logger and batch_idx == self.hparams.prompt_batch_idx:
@@ -215,9 +215,10 @@ class JukeboxDiffusion(pl.LightningModule):
         return self.decode(latent_states)
 
     def configure_optimizers(self):
-        optim = torch.optim.Adam(
+        optim = torch.optim.AdamW(
             self.model.parameters(),
             lr=self.hparams.lr,
+            weight_decay=self.hparams.weight_decay,
         )
 
         # don't return, handled manually in optimizer step

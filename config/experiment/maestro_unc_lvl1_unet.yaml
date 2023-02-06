@@ -10,22 +10,23 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["maestro", "jukebox", "lvl2", "unconditional"]
+tags: ["maestro", "jukebox", "lvl1", "unconditional"]
 
 seed: 103
 
 trainer:
   log_every_n_steps: 10
+  gradient_clip_val: 1.0
   accumulate_grad_batches: 4
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 6
-  batch_size: 64
-  sample_length: 262144  # ~5.9s
+  batch_size: 38
+  sample_length: 131072  # ~3s
 
 model:
-  target_lvl: 2
+  target_lvl: 1
   model:
     # 96Mil params
     _target_: src.module.diffusion_attn_unet_1d.DiffusionAttnUnet1D
@@ -33,17 +34,19 @@ model:
     n_attn_layers: 6
     channel_sizes: [128, 128, 128, 128, 256, 256, 256, 256, 512, 512]
   lr: 1e-4
-  lr_warmup_steps: 500
+  lr_warmup_steps: 256
   inference_batch_size: 16
   noise_scheduler:
     _target_: diffusers.DDIMScheduler
     num_train_timesteps: 1000
     beta_start: 1e-4
     beta_end: 0.02
+    beta_schedule: linear
+    clip_sample: False
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000
-  num_inference_steps: 100
+  num_inference_steps: 125
   generate_unconditional: true
   generate_continuation: false
   skip_audio_logging: false
@@ -52,6 +55,7 @@ model:
 logger:
   wandb:
     project: "jukebox_diffusion"
+    name: "maestro_unc_lvl1_unet"
     tags: ${tags}
   tensorboard:
     name: "jukebox_diffusion"
