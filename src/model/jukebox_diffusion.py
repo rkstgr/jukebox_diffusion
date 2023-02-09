@@ -176,7 +176,7 @@ class JukeboxDiffusion(pl.LightningModule):
         if lvl is None:
             lvl = self.hparams.target_lvl
 
-        self.vqvau.encode(audio, lvl=lvl)
+        embeddings = self.vqvau.encode(audio, lvl=lvl)
         embeddings = self.preprocess(embeddings)
         return embeddings
 
