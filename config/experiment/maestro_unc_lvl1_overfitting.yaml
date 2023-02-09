@@ -1,0 +1,61 @@
+# @package _global_
+
+# maestro_unconditional_lvl2_unet_100M.yaml
+
+defaults:
+  - override /callbacks: default.yaml
+  - override /trainer: default.yaml
+  - override /datamodule: maestro_datamodule.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["maestro", "jukebox", "lvl1", "unconditional", "overfit"]
+
+seed: 103
+
+trainer:
+  log_every_n_steps: 5
+  overfit_batches: 1
+  check_val_every_n_epoch: 50
+
+datamodule:
+  root_dir: ${oc.env:MAESTRO_DATASET_DIR}
+  num_workers: 6
+  batch_size: 12
+  train_aug_shift: false
+  sample_length: 131072  # ~3s
+
+model:
+  target_lvl: 1
+  model:
+    _target_: src.module.diffusion_attn_unet_1d.DiffusionAttnUnet1D
+    io_channels: 64
+    n_attn_layers: 4
+    channel_sizes: [128, 128, 128, 128, 256, 256, 256, 256, 512]
+  lr: 1e-3
+  lr_warmup_steps: 10
+  inference_batch_size: 12
+  noise_scheduler:
+    _target_: diffusers.PNDMScheduler
+    num_train_timesteps: 1000
+    beta_start: 1e-4
+    beta_end: 0.02
+    beta_schedule: linear
+    prediction_type: epsilon
+  timestep_sampler:
+    _target_: src.diffusion.timestep_sampler.TimeConstantSampler
+    max_timestep: 1000
+  num_inference_steps: 20
+  generate_unconditional: true
+  generate_continuation: false
+  skip_audio_logging: false
+
+
+logger:
+  wandb:
+    project: "jukebox_diffusion"
+    name: "maestro_unc_lvl1_overfit"
+    tags: ${tags}
+  tensorboard:
+    name: "jukebox_diffusion"
