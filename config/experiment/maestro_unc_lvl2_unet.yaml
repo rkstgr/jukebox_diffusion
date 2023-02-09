@@ -16,7 +16,6 @@ seed: 103
 
 trainer:
   log_every_n_steps: 10
-  accumulate_grad_batches: 4
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
@@ -33,7 +32,7 @@ model:
     n_attn_layers: 6
     channel_sizes: [128, 128, 128, 128, 256, 256, 256, 256, 512, 512]
   lr: 1e-4
-  lr_warmup_steps: 500
+  lr_warmup_steps: 100
   inference_batch_size: 16
   noise_scheduler:
     _target_: diffusers.DDIMScheduler
