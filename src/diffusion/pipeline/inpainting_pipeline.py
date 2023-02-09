@@ -72,7 +72,7 @@ class InpaintingPipeline:
         for t in tqdm(self.scheduler.timesteps):
             # Build the timesteps
             timesteps = (
-                    t * (1 - mask[:, :, 0]) * torch.ones(batch_size, x.shape[1], device=self.device)
+                    t * (1 - mask[:, :, 0]) * torch.ones(batch_size, x.shape[1], device=self.device)    
             ).long()
             sequence_output = self.unet(seq, timesteps)
 

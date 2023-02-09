@@ -1,0 +1,60 @@
+# @package _global_
+
+# maestro_upsample_lvl1
+
+defaults:
+  - override /callbacks: default.yaml
+  - override /trainer: default.yaml
+  - override /datamodule: maestro_datamodule.yaml
+  - override /model: jukebox_upsampler
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["maestro", "jukebox", "lvl1", "upsample"]
+
+seed: 100
+
+trainer:
+  log_every_n_steps: 10
+  gradient_clip_val: 1
+  accumulate_grad_batches: 4
+
+datamodule:
+  root_dir: ${oc.env:MAESTRO_DATASET_DIR}
+  num_workers: 8
+  batch_size: 8
+  sample_length: 32768 # ~2.9s
+
+model:
+  source_lvl: 1
+  target_lvl: 0
+  model:
+    _target_: src.module.diffusion_attn_unet_1d.DiffusionAttnUnet1D
+    io_channels: 64
+    cond_channels: 64
+    n_attn_layers: 6
+    channel_sizes: [128, 128, 128, 256, 256, 256, 256, 512, 512]
+  lr: 1e-4
+  lr_warmup_steps: 2000
+  num_train_timesteps: 1000
+  inference_batch_size: 8
+  noise_scheduler:
+    _target_: diffusers.PNDMScheduler
+    num_train_timesteps: 1000
+    beta_start: 1e-4
+    beta_end: 0.02
+    beta_schedule: linear
+  timestep_sampler:
+    _target_: src.diffusion.timestep_sampler.TimeConstantSampler
+    max_timestep: 1000
+  num_inference_steps: 80
+  skip_audio_logging: false
+
+
+logger:
+  wandb:
+    project: "jukebox_diffusion"
+    tags: ${tags}
+  tensorboard:
+    name: "jukebox_diffusion"
