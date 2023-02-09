@@ -27,5 +27,5 @@ pyrootutils     # standardizing the project root setup
 rich            # beautiful text formatting in terminal
 pytest          # tests
 tqdm
-diffusers
+diffusers==0.12.1
 transformers
