@@ -9,8 +9,8 @@ import torchaudio
 from diffusers import SchedulerMixin, PNDMScheduler
 from einops import rearrange
 from pytorch_lightning.loggers import WandbLogger
-from transformers import JukeboxVQVAEConfig, JukeboxVQVAE
 
+from src.model.jukebox_vqvae import JukeboxVQVAE
 from src.diffusion.pipeline.inpainting_pipeline import InpaintingPipeline
 from src.diffusion.pipeline.unconditional_pipeline import UnconditionalPipeline
 from src.diffusion.timestep_sampler.constant_sampler import TimeConstantSampler
@@ -61,8 +61,7 @@ class JukeboxDiffusion(pl.LightningModule):
         else:
             self.timestep_sampler = timestep_sampler
 
-        if load_vqvae:
-            self.jukebox_vqvae = self.load_jukebox_vqvae(os.environ["JUKEBOX_VQVAE_PATH"])
+        self.vqvae = JukeboxVQVAE
 
         self.lr_scheduler = None
 
@@ -166,14 +165,6 @@ class JukeboxDiffusion(pl.LightningModule):
                 Path(path).parent.mkdir(parents=True, exist_ok=True)
                 torchaudio.save(filepath=path, src=a, sample_rate=self.SAMPLE_RATE)
 
-    def load_jukebox_vqvae(self, vae_path):
-        print("Loading Jukebox VAE")
-        config = JukeboxVQVAEConfig.from_pretrained("openai/jukebox-1b-lyrics")
-        vae = JukeboxVQVAE(config)
-        vae.load_state_dict(torch.load(vae_path, map_location=self.device))
-        vae.eval().to(self.device)
-        return vae
-
     def preprocess(self, batch: torch.Tensor) -> torch.Tensor:
         return batch
     
@@ -184,10 +175,8 @@ class JukeboxDiffusion(pl.LightningModule):
     def encode(self, audio: torch.Tensor, lvl=None):
         if lvl is None:
             lvl = self.hparams.target_lvl
-        audio = rearrange(audio, "b t c -> b c t")
-        encoder = self.jukebox_vqvae.encoders[lvl]
-        embeddings = encoder(audio)[-1]
-        embeddings = rearrange(embeddings, "b c t -> b t c")
+
+        self.vqvau.encode(audio, lvl=lvl)
         embeddings = self.preprocess(embeddings)
         return embeddings
 
@@ -195,24 +184,9 @@ class JukeboxDiffusion(pl.LightningModule):
     def decode(self, embeddings, lvl=None):
         if lvl is None:
             lvl = self.hparams.target_lvl
-        embeddings = self.postprocess(embeddings)
-        embeddings = rearrange(embeddings, "b t c -> b c t")
-        # Use only lowest level
-        decoder = self.jukebox_vqvae.decoders[lvl]
-        with torch.no_grad():
-            de_quantised_state = decoder([embeddings], all_levels=False)
-        de_quantised_state = de_quantised_state.permute(0, 2, 1)
-        return de_quantised_state
 
-    @torch.no_grad()
-    def quantize_and_decode(self, embeddings):
-        """Quantize the embeddings with the VQ-VAE first and then decode them"""
-        embeddings = rearrange(embeddings, "b t c -> b c t")
-        music_tokens = self.jukebox_vqvae.bottleneck.level_blocks[self.hparams.target_lvl].encode(embeddings)
-        latent_states = self.jukebox_vqvae.bottleneck.level_blocks[self.hparams.target_lvl].decode(
-            music_tokens)
-        latent_states = rearrange(latent_states, "b c t -> b t c")
-        return self.decode(latent_states)
+        embeddings = self.postprocess(embeddings)
+        return self.vqvau.decode(embeddings, lvl=lvl)
 
     def configure_optimizers(self):
         optim = torch.optim.AdamW(
