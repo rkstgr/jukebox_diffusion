@@ -59,7 +59,5 @@ class UnconditionalPipeline(SequencePipeline):
             # 2. predict previous mean of seq x_t-1 and add variance depending on eta
             # do x_t -> x_t-1
             seq = self.scheduler.step(model_output, t, seq, return_dict=True).prev_sample
-            if clip:
-                seq = torch.clamp(seq, -1, 1)
 
         return seq
