@@ -23,6 +23,7 @@ class MaestroDataModule(pl.LightningDataModule):
             batch_size: int,
             num_workers: int,
             sample_length: Optional[int] = 44100 * 10,
+            train_aug_shift: bool = True,
             pin_memory: bool = False,
     ):
         super().__init__()
@@ -31,6 +32,7 @@ class MaestroDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.sample_length = sample_length
+        self.train_aug_shift = train_aug_shift
         self.pin_memory = pin_memory
 
         self.train_dataset = None
@@ -38,7 +40,7 @@ class MaestroDataModule(pl.LightningDataModule):
         self.test_dataset = None
 
     def setup(self, stage=None):
-        self.train_dataset = MaestroDataset(self.root_dir, split="train", sample_length=self.sample_length, aug_shift=True)
+        self.train_dataset = MaestroDataset(self.root_dir, split="train", sample_length=self.sample_length, aug_shift=self.train_aug_shift)
         self.val_dataset = MaestroDataset(self.root_dir, split="validation", sample_length=self.sample_length, shuffle=True) # shuffle only once on initialization
         self.test_dataset = MaestroDataset(self.root_dir, split="test", sample_length=self.sample_length)
 
