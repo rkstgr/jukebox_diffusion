@@ -6,7 +6,7 @@ from einops import rearrange
 from transformers import JukeboxVQVAEConfig
 from transformers import JukeboxVQVAE
 
-class JukeboxVQVAEModel:
+class JukeboxVQVAEModel(nn.Module):
     def __init__(self, vae_path=None, device="cpu") -> None:
         super().__init__()
         if vae_path is None:
