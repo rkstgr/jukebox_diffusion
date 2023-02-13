@@ -42,12 +42,18 @@ class UnconditionalPipeline(SequencePipeline):
             `torch.Tensor`: The generated sequence.
         """
 
+        def report_stats(sample, desc=""):
+            mean, std, smin, smax = torch.mean(sample).item(), torch.std(sample).item(), torch.min(sample).item(), torch.max(sample).item()
+            print(f"[{desc}] | mean: {mean:.3f}, std: {std:.3f}, min: {smin:.3f}, max: {smax:.3f}")
+
         # Sample gaussian noise to begin loop
         seq = torch.randn(
             (batch_size, seq_len, self.unet.output_dim),
             generator=generator,
         )
         seq = seq.to(self.device)
+
+        report_stats(seq, "Initial")
 
         # set step values
         self.scheduler.set_timesteps(num_inference_steps)
@@ -59,5 +65,7 @@ class UnconditionalPipeline(SequencePipeline):
             # 2. predict previous mean of seq x_t-1 and add variance depending on eta
             # do x_t -> x_t-1
             seq = self.scheduler.step(model_output, t, seq, return_dict=True).prev_sample
+            seq = torch.clip(seq, -10, 10)
+            report_stats(seq, f"Step {t}")
 
         return seq
