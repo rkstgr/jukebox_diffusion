@@ -16,41 +16,45 @@ seed: 101
 
 trainer:
   log_every_n_steps: 10
+  gradient_clip_val: 1
   accumulate_grad_batches: 4
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
-  num_workers: 8
-  batch_size: 20
-  sample_length: 262144  # ~5.9s -> 2048 lvl 0 tokens
+  num_workers: 4
+  batch_size: 16
+  sample_length: 131072
 
 model:
-  target_lvl: 2
+  target_lvl: 1
   model:
     _target_: src.module.sgconv.GConvStackedDiffusion
     input_data_dim: 64
     channels: 32
     bidirectional: true
-    dropout: 0.05
-    n_layers: 24
+    dropout: 0.01
+    n_layers: 16
     time_emb_dim: 32
+    timestep_max_index: 1000
   lr: 1e-4
   lr_warmup_steps: 200
-  inference_batch_size: 16
+  inference_batch_size: 4
   noise_scheduler:
     _target_: diffusers.DPMSolverMultistepScheduler
     num_train_timesteps: 1000
-    beta_start: 1e-4
+    beta_start: 0.0001
     beta_end: 0.02
     beta_schedule: linear
     solver_order: 3
-    prediction_type: epsilon
+    prediction_type: "sample"
+  normalizer_path: "config/normalizations/maestro_val_lvl_1.pt"
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000
-  num_inference_steps: 80
+  num_inference_steps: 100
   generate_unconditional: true
   generate_continuation: false
+  log_train_audio: true
   skip_audio_logging: false
 
 
