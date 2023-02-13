@@ -542,10 +542,10 @@ class GConvStackedDiffusion(nn.Module):
         transposed
     """
 
-    def __init__(self, input_data_dim, channels, bidirectional=True, dropout=0.0, n_layers=10,  time_emb_dim=16):
+    def __init__(self, input_data_dim, channels, bidirectional=True, dropout=0.0, n_layers=10,  time_emb_dim=16, timestep_max_index=1000):
         super().__init__()
         self.input_data_dim = input_data_dim
-        self.timestep_embed = IntegerFourierEmbedding(time_emb_dim, min_index=0, max_index=1000)
+        self.timestep_embed = IntegerFourierEmbedding(time_emb_dim, min_index=0, max_index=timestep_max_index)
         self.model = GConvStacked(input_data_dim+time_emb_dim, channels, bidirectional, dropout, n_layers)
         self.ff = nn.Linear(input_data_dim+time_emb_dim, input_data_dim)
 
