@@ -10,62 +10,59 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["maestro", "jukebox", "lvl1", "unconditional", "overfit"]
+tags: ["maestro", "jukebox", "lvl1", "unconditional"]
 
-seed: 103
+seed: 110
 
 trainer:
   log_every_n_steps: 10
-  overfit_batches: 1
-  check_val_every_n_epoch: 200
-  accumulate_grad_batches: 20
-  
+  gradient_clip_val: 1
+  accumulate_grad_batches: 4
+  limit_val_batches: 0.1
+  val_check_interval: 0.25
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
-  num_workers: 0
-  batch_size: 1
-  train_aug_shift: false
-  sample_length: 131072  # ~3s
-  shuffle: false
+  num_workers: 4
+  batch_size: 20
+  sample_length: 65536
 
 model:
   target_lvl: 1
   model:
     _target_: src.module.sgconv.GConvStackedDiffusion
     input_data_dim: 64
-    channels: 32
+    channels: 16
     bidirectional: true
-    dropout: 0.0
+    dropout: 0.01
     n_layers: 16
     time_emb_dim: 32
-    timestep_max_index: 500
-  lr: 2e-4
-  lr_warmup_steps: 50
-  inference_batch_size: 4
+    timestep_max_index: 1000
+  lr: 1e-4
+  lr_warmup_steps: 200
+  inference_batch_size: 8
   noise_scheduler:
     _target_: diffusers.DPMSolverMultistepScheduler
-    num_train_timesteps: 400
-    beta_start: 0.0001
+    num_train_timesteps: 1000
+    beta_start: 1e-4
     beta_end: 0.02
     beta_schedule: linear
     solver_order: 3
-    prediction_type: "sample"
-  normalizer_path: "config/normalizations/maestro_val_lvl_1.pt"
+    prediction_type: epsilon
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
-    max_timestep: 400
+    max_timestep: 1000
+  normalizer_path: "config/normalizations/maestro_val_lvl_1.pt"
   num_inference_steps: 40
   generate_unconditional: true
   generate_continuation: false
-  log_train_audio: true
   skip_audio_logging: false
 
 
 logger:
   wandb:
     project: "jukebox_diffusion"
-    name: "maestro_unc_lvl1_overfit"
+    name: "unc_lvl1_sgconv"
     tags: ${tags}
   tensorboard:
     name: "jukebox_diffusion"

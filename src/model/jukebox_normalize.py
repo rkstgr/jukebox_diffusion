@@ -1,46 +1,60 @@
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 
+from einops import rearrange
 import torch
 import torch.nn as nn
 
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
 
-class StatsRecorder:
-    def __init__(self, data) -> None:
-        assert data.dim() == 3, "Input tensor must be of shape (Batch, Length, Channels)"
-        self.n_observations = data.shape[0] * data.shape[1]
-        self.mean = torch.mean(data, dim=(0, 1))
-        self.std = torch.std(data, dim=(0, 1))
-    
-    def update(self, data) -> None:
-        assert data.dim() == 3, "Input tensor must be of shape (Batch, Length, Channels)"
 
-        n_observations = data.shape[0] * data.shape[1]
-        new_mean = torch.mean(data, dim=(0, 1))
-        new_std = torch.std(data, dim=(0, 1))
-        
-        m = self.n_observations * 1.0
-        n = n_observations * 1.0
+class RunningStats:
 
-        mean_prev = self.mean
+    def __init__(self):
+        self.n = 0
+        self.old_m = 0
+        self.new_m = 0
+        self.old_s = 0
+        self.new_s = 0
 
-        # incremental mean
-        self.mean = (m * mean_prev + n * new_mean) / (m + n)
-        
-        # incremental std
-        self.std = torch.sqrt((m * (self.std ** 2) + n * (new_std ** 2) + (m * n * (mean_prev - new_mean) ** 2) / (m + n)) / (m + n))
+    def clear(self):
+        self.n = 0
 
-        self.n_observations += n_observations
+    def push(self, x):
+        self.n += 1
+
+        if self.n == 1:
+            self.old_m = self.new_m = x
+            self.old_s = 0
+        else:
+            self.new_m = self.old_m + (x - self.old_m) / self.n
+            self.new_s = self.old_s + (x - self.old_m) * (x - self.new_m)
+
+            self.old_m = self.new_m
+            self.old_s = self.new_s
+
+    def mean(self):
+        return self.new_m if self.n else 0.0
+
+    def variance(self):
+        return self.new_s / (self.n - 1) if self.n > 1 else 0.0
+
+    def standard_deviation(self):
+        return torch.sqrt(self.variance())
+
         
 
 class JukeboxNormalizer(nn.Module):
 
-    def __init__(self, mean=None, std=None) -> None:
+    def __init__(self, path: Optional[str] = None) -> None:
         super().__init__()
-        self.mean = mean
-        self.std = std
+        self.register_buffer("mean", None)
+        self.register_buffer("std", None)
+        
+        if path is not None:
+            print(f"Loading jukebox normalizer from {path}")
+            self.load_settings(path)
 
     def load_settings(self, path: str) -> None:
         self.mean, self.std = torch.load(path)
@@ -80,15 +94,15 @@ class JukeboxNormalizer(nn.Module):
         return mean, std
 
     def compute_stats_iter(self, dataloader: DataLoader, apply_fn=None, total=None) -> Tuple[torch.Tensor, torch.Tensor]:
-        for i, batch in tqdm(enumerate(dataloader), total=total):
-            if i == 0:
-                if apply_fn is not None:
-                    batch = apply_fn(batch)
-                stats = StatsRecorder(batch)
-            else:
-                stats.update(batch)
+        running_stats = RunningStats()
+        for batch in tqdm(dataloader, total=total):
+            if apply_fn is not None:
+                batch = apply_fn(batch)
+            batch = rearrange(batch, "b t c -> (b t) c")
+            for s in batch:
+                running_stats.push(s)
         
-        return stats.mean, stats.std
+        return running_stats.mean(), running_stats.standard_deviation()
 
     def save_stats(self, filename: str, stats: Tuple[torch.Tensor, torch.Tensor]) -> None:
         torch.save(stats, filename)

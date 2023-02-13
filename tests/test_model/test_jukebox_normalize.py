@@ -3,7 +3,7 @@ import torch
 from einops import rearrange
 
 import os
-
+import pytest
 
 def test_normalizer():
     normalizer = JukeboxNormalizer()
@@ -58,3 +58,14 @@ def test_normalizer_normalize_denormalize():
 
     assert torch.allclose(x, x_denorm), "Denormalization is not correct"
 
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+def test_normalize_cuda():
+    normalizer = JukeboxNormalizer("config/normalizations/maestro_all_lvl_1.pt").to("cuda")
+
+    x = torch.randn(512, 1024, 64).to("cuda")
+
+    x_norm = normalizer.normalize(x)
+    x_denorm = normalizer.denormalize(x_norm)
+
+    assert torch.allclose(x, x_denorm), "Normalization is not invertible"

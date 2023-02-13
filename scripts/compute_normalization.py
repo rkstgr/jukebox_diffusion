@@ -34,8 +34,10 @@ def main(dataset_name: str, embedding_lvl: int):
     apply_fn = lambda x: vqvae.encode(x.to(device), lvl=embedding_lvl).detach().to("cpu")
 
     mean, std = normalizer.compute_stats_iter(dataloader, apply_fn=apply_fn, total=len(dataloader))
+    print(mean)
+    print(std)
     normalizer.save_stats(f"{dataset_name}_lvl_{embedding_lvl}.pt", (mean, std))
 
 
 if __name__ == "__main__":
-    main("maestro_all", 1)
+    main("maestro_val", 1)
