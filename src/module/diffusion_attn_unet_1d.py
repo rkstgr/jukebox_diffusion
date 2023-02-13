@@ -27,7 +27,8 @@ class DiffusionAttnUnet1D(nn.Module):
             channel_sizes = [128, 128, 256, 256] + [512] * 10
 
         self.output_dim = io_channels
-        self.timestep_embed = IntegerFourierEmbedding(16, min_index=0, max_index=timestep_max)
+        timestep_embed_dim = 16
+        self.timestep_embed = IntegerFourierEmbedding(timestep_embed_dim, min_index=0, max_index=timestep_max)
         depth = len(channel_sizes)
 
         attn_layer = depth - n_attn_layers - 1
@@ -68,7 +69,7 @@ class DiffusionAttnUnet1D(nn.Module):
                 )
             else:
                 block = nn.Sequential(
-                    conv_block(io_channels + cond_channels + 16 + latent_dim, c, c),
+                    conv_block(io_channels + cond_channels + timestep_embed_dim + latent_dim, c, c),
                     conv_block(c, c, c),
                     conv_block(c, c, c),
                     block,
@@ -103,7 +104,11 @@ class DiffusionAttnUnet1D(nn.Module):
 
         # move t to device
         t = t.to(x_in.device)
-        t_emb = self.timestep_embed(t)  # (batch, seq_len, 16)
+        try:
+            t_emb = self.timestep_embed(t)  # (batch, seq_len, 16)
+        except RuntimeError:
+            print(f"timestep embedding failed for {t}")
+            print(f"Timstep min_index={self.timestep_embed.min_index}, max_index={self.timestep_embed.max_index}")
 
         inputs = [x_in, t_emb]
 
