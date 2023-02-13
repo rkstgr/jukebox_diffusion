@@ -11,6 +11,7 @@ from einops import rearrange
 from pytorch_lightning.loggers import WandbLogger
 
 from src.model.jukebox_vqvae import JukeboxVQVAEModel
+from src.model.jukebox_normalize import JukeboxNormalizer
 from src.diffusion.pipeline.inpainting_pipeline import InpaintingPipeline
 from src.diffusion.pipeline.unconditional_pipeline import UnconditionalPipeline
 from src.diffusion.timestep_sampler.constant_sampler import TimeConstantSampler
@@ -31,20 +32,23 @@ class JukeboxDiffusion(pl.LightningModule):
             inference_batch_size: int = 1,
             noise_scheduler: Optional[SchedulerMixin] = None,
             timestep_sampler: Optional[DiffusionTimestepSampler] = None,
+            normalizer_path: Optional[Path] = None,
             generate_unconditional: bool = True,
             generate_continuation: bool = False,
             prompt_batch_idx: int = 0,
             log_train_audio: bool = False,
             skip_audio_logging: bool = False,
             weight_decay: float = 0.01,
+            load_vqvae: bool = True,
             *args,
             **kwargs,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["model", "noise_scheduler", "timestep_sampler", "*args", "**kwargs"])
+        self.save_hyperparameters(ignore=["model", "noise_scheduler", "timestep_sampler", "normalizer", "vqvae", "*args", "**kwargs"])
         self.model = model
 
         if noise_scheduler is None:
+            print("Using default noise scheduler")
             self.noise_scheduler = PNDMScheduler(
                 beta_start=1e-4,
                 beta_end=1e-2,
@@ -52,14 +56,26 @@ class JukeboxDiffusion(pl.LightningModule):
                 num_train_timesteps=1000
             )
         else:
+            print("Using custom noise scheduler")
             self.noise_scheduler = noise_scheduler
+            print(f"Number of training timesteps: {self.noise_scheduler.num_train_timesteps}")
 
         if timestep_sampler is None:
             self.timestep_sampler = TimeConstantSampler(max_timestep=self.noise_scheduler.num_train_timesteps)
+            print(f"Using constant timestep sampler with max timestep {self.noise_scheduler.num_train_timesteps}")
         else:
             self.timestep_sampler = timestep_sampler
 
-        self.vqvae = JukeboxVQVAEModel(device=self.device)
+        if normalizer_path is not None:
+            self.register_module("normalizer", JukeboxNormalizer(normalizer_path))
+        else:
+            self.normalizer = None
+
+        if load_vqvae:
+            self.vqvae = JukeboxVQVAEModel(device=self.device)
+            # freeze vqvae
+            for param in self.vqvae.parameters():
+                param.requires_grad = False
 
         self.lr_scheduler = None
 
@@ -77,21 +93,18 @@ class JukeboxDiffusion(pl.LightningModule):
 
         # Add noise to the latents according to the noise magnitude at each timestep
         noisy_x = self.noise_scheduler.add_noise(x, noise, timesteps)
-        noise_pred = self.model(noisy_x, timesteps)
+        model_output = self.model(noisy_x, timesteps)
 
         # compute between noise & noise_pred only where timesteps > 0
         loss = F.mse_loss(
-            noise_pred[torch.where(timesteps > 0)],
-            noise[torch.where(timesteps > 0)]
+            model_output,
+            noise,
         )
 
         return loss
 
     def training_step(self, batch, batch_idx):
-        target = self.encode(batch)
-        if batch_idx == 0 and self.current_epoch == 0:
-            print("Shape:", target.shape)
-
+        target = self.encode(batch, debug=batch_idx == 0)
         loss = self(target)
         self.log_dict({
             "train/loss": loss,
@@ -107,7 +120,7 @@ class JukeboxDiffusion(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        x = self.encode(batch)
+        x = self.encode(batch, debug=batch_idx == 0)
         loss = self(x)
         self.log("val/loss", loss, sync_dist=True)
         if self.logger and batch_idx == self.hparams.prompt_batch_idx:
@@ -124,7 +137,7 @@ class JukeboxDiffusion(pl.LightningModule):
                 seq_len=outputs[0].shape[1],
                 seed=seed,
             )
-            audio = self.decode(embeddings)
+            audio = self.decode(embeddings, debug=True)
             self.log_audio(audio, "unconditional", f"epoch_{self.current_epoch}_seed_{seed}")
 
         if self.logger and len(outputs) > 0 and self.hparams.generate_continuation:
@@ -164,16 +177,46 @@ class JukeboxDiffusion(pl.LightningModule):
                 torchaudio.save(filepath=path, src=a, sample_rate=self.SAMPLE_RATE)
 
     @torch.no_grad()
-    def encode(self, audio: torch.Tensor, lvl=None):
+    def encode(self, audio: torch.Tensor, lvl=None, debug=False):
         if lvl is None:
             lvl = self.hparams.target_lvl
 
-        return self.vqvae.encode(audio.to(self.device), lvl=lvl)
+        embeddings = self.vqvae.encode(audio, lvl=lvl)
+        if debug:
+            print("Embeddings shape:", embeddings.shape)
+            print("Mean (before norm):", embeddings.mean())
+            print("Std  (before norm):", embeddings.std())
+            print("Min  (before norm):", embeddings.min())
+            print("Max  (before norm):", embeddings.max())
+        if self.normalizer is not None:
+            embeddings = self.normalizer.normalize(embeddings)
+            if debug:
+                print("Mean (after norm):", embeddings.mean())
+                print("Std  (after norm):", embeddings.std())
+                print("Min  (after norm):", embeddings.min())
+                print("Max  (after norm):", embeddings.max())
+
+        return embeddings
 
     @torch.no_grad()
-    def decode(self, embeddings, lvl=None):
+    def decode(self, embeddings, lvl=None, debug=False):
         if lvl is None:
             lvl = self.hparams.target_lvl
+
+        if debug:
+            print("** Decode shape:", embeddings.shape)
+            print("Mean (before denorm):", embeddings.mean())
+            print("Std  (before denorm):", embeddings.std())
+            print("Min  (before denorm):", embeddings.min())
+            print("Max  (before denorm):", embeddings.max())
+            
+        if self.normalizer is not None:
+            embeddings = self.normalizer.denormalize(embeddings)
+            if debug:
+                print("Mean (after denorm):", embeddings.mean())
+                print("Std  (after denorm):", embeddings.std())
+                print("Min  (after denorm):", embeddings.min())
+                print("Max  (after denorm):", embeddings.max())
 
         return self.vqvae.decode(embeddings, lvl=lvl)
 
