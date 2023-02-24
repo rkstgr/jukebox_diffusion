@@ -183,11 +183,11 @@ class JukeboxDiffusion(pl.LightningModule):
 
         embeddings = self.vqvae.encode(audio, lvl=lvl)
         if debug:
-            print("Embeddings shape:", embeddings.shape)
-            print("Mean (before norm):", embeddings.mean())
-            print("Std  (before norm):", embeddings.std())
-            print("Min  (before norm):", embeddings.min())
-            print("Max  (before norm):", embeddings.max())
+            print("Embeddings shape (before norm)", embeddings.shape)
+            print("  Mean:", embeddings.mean().item())
+            print("  Std :", embeddings.std().item())
+            print("  Min :", embeddings.min().item())
+            print("  Max :", embeddings.max().item())
         if self.normalizer is not None:
             embeddings = self.normalizer.normalize(embeddings)
             if debug:
@@ -195,6 +195,7 @@ class JukeboxDiffusion(pl.LightningModule):
                 print("Std  (after norm):", embeddings.std())
                 print("Min  (after norm):", embeddings.min())
                 print("Max  (after norm):", embeddings.max())
+            embeddings = embeddings.clamp(-5, 5)
 
         return embeddings
 

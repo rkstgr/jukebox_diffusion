@@ -29,6 +29,8 @@ class MaestroDataModule(pl.LightningDataModule):
     ):
         super().__init__()
 
+        self.sample_rate = 44100
+
         self.root_dir = root_dir
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -55,7 +57,7 @@ class MaestroDataModule(pl.LightningDataModule):
                           num_workers=self.num_workers, pin_memory=self.pin_memory)
 
     def test_dataloader(self):
-        return DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False,
+        return DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=True,
                           num_workers=self.num_workers, pin_memory=self.pin_memory)
 
 

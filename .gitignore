@@ -156,3 +156,6 @@ wandb/
 
 # SLURM Scripts
 *.sbatch
+
+# Evaluation files
+eval/*
