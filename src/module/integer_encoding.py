@@ -42,3 +42,14 @@ class IntegerFourierEmbedding(nn.Module):
 
         pe = self.pe[idx_flatten + self.min_index]
         return pe.view(*idx.shape, self.pe.shape[1])
+
+    def apply_1d(self, x, dim=-1):
+        """
+        Args:
+            x: Tensor [...], Input for which positional encoding should be computed
+            dim: int. Dimension of x with size D for which positional encoding should be computed
+        Returns:
+            Tensor [D, emb_dim]
+        """
+        t = torch.arange(x.shape[dim], device=x.device)
+        return self(t)
