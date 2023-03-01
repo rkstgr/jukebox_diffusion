@@ -1,11 +1,18 @@
+from abc import ABC, abstractmethod
+from collections import namedtuple
+from dataclasses import dataclass
+
+import numpy as np
 import torch as th
 import torch.nn as nn
-import pytorch_lightning as pl
-from discrete_diffusions.reparam_absorbing_diffusion import ReparamAbsorbingDiffusion
-from dataclasses import dataclass
-from abc import ABC, abstractmethod
-import numpy as np
 
+import pytorch_lightning as pl
+from pytorch_lightning.loggers import WandbLogger
+
+from discrete_diffusions.reparam_absorbing_diffusion import \
+    ReparamAbsorbingDiffusion
+
+from src.model.jukebox_vqvae import JukeboxVQVAEModel
 from src.module.integer_encoding import IntegerFourierEmbedding
 
 
@@ -54,9 +61,12 @@ class UniformSampler(ScheduleSampler):
 @dataclass
 class RDMArgs:
     # diffusion
-    num_diffusion_timesteps: int = 1000
-    mask_idx: int = 0
-    reweighting_type: str = "none"
+    diffusion_type: str = "reparam_absorbing"
+    q_sample_mode: str = "coupled"
+
+    num_diffusion_timesteps: int = 50
+    mask_idx: int = 2048
+    reweighting_type: str = "linear"
     not_diffusing_special_sym: bool = True
     label_smoothing: float = 0.1
 
@@ -69,6 +79,12 @@ class RDMArgs:
 
     token_dict_size: int = 2048
     max_token_seq_len: int = 8192
+
+
+RDMDecoderOut = namedtuple(
+    "RDMDecoderOut",
+    ["output_tokens", "output_scores", "auxiliary_output", "attn", "step", "max_step", "history"],
+)
 
 
 class RDMEncoder(nn.Module):
@@ -113,17 +129,20 @@ class RDM(pl.LightningModule):
     def __init__(self, args) -> None:
         super().__init__()
 
-        if isinstance(args, dict):
+        if not isinstance(args, RDMArgs):
             args = RDMArgs(**args)
 
-        pad_id, bos_id, eos_id = args.token_dict_size+2, args.token_dict_size+2, args.token_dict_size+2
+        self.args: RDMArgs = args
+        self.unk = args.mask_idx
+
+        self.pad_id, self.bos_id, self.eos_id = args.token_dict_size+2, args.token_dict_size+2, args.token_dict_size+2
 
         self.diffusion = ReparamAbsorbingDiffusion(
             args.num_diffusion_timesteps,
             args.mask_idx, # absorbing state token idx
             self.args.reweighting_type,
             self.args.not_diffusing_special_sym,
-            pad_id, bos_id, eos_id
+            self.pad_id, self.bos_id, self.eos_id
         )
         self.time_sampler = UniformSampler(args.num_diffusion_timesteps)
 
@@ -138,9 +157,18 @@ class RDM(pl.LightningModule):
             num_layers=args.encoder_layers,
             norm=nn.LayerNorm(args.encoder_dim)
         )
+
+        self.vqvae = JukeboxVQVAEModel(vae_path=args.vae_path, device=self.device)
         
     def forward(self, x):
         pass
+
+    def tokenize_audio(self, batch):
+        assert batch.ndim == 3 and batch.shape[-1] == 1, "batch must be (batch_size, audio_seq_len, 1)"
+        x = self.vqvae.encode_quantized(batch)
+        assert x.ndim == 2, "x must be (batch_size, token_seq_len)"
+        assert x.max() < self.args.token_dict_size, "x must be in range [0, token_dict_size)"
+        return x
 
     def _prepare_batch(self, batch):
         """
@@ -148,13 +176,13 @@ class RDM(pl.LightningModule):
             batch (torch.Tensor): (batch_size, audio_seq_len, 1). The batch of audio data in raw float waveform format.
         Returns:
             Dict[str, torch.Tensor]:
-                - "x_0": (batch_size, token_seq_len, 2048). Original music tokens one-hot encoded.
+                - "x_0": (batch_size, token_seq_len, ). Original music tokens one-hot encoded one of {0, 1, ..., 2047}
                 - "x_t": (batch_size, token_seq_len, 2048). Noised/corrupted music tokens one-hot encoded.
                 -   "t": (batch_size, ). The diffusion time step for each batch.
         """
-        x_0 = self.vqvae.encode_quantized(batch)
-        
-        non_special_sym_mask = x_0.ne(self.vqvae.pad_id)
+        x_0 = self.tokenize_audio(batch)
+
+        non_special_sym_mask = x_0.ne(self.args.mask_idx+1)
 
         if self.args.q_sample_mode == "default":
             # we use 1 sample for the default sampling trick.
@@ -164,7 +192,6 @@ class RDM(pl.LightningModule):
             # but feel free to specify as you like.
             num_q_samples = 2
             x_0 = x_0.repeat(num_q_samples, 1)
-        
 
         batch_size = x_0.shape[0]
         device = x_0.device
@@ -190,6 +217,7 @@ class RDM(pl.LightningModule):
                 x_t, x_0_ignore, mask = self.diffusion.q_sample(x_0=x_0, t=t, non_special_sym_mask=non_special_sym_mask)
                 rets.append((t, weight_t, x_t, x_0_ignore, mask))
             t, weight_t, x_t, x_0_ignore, mask = map(lambda x: th.cat(x, dim=0), zip(*rets))
+
         elif self.args.q_sample_mode == "default":
             t, weight_t = self.time_sampler.sample(batch_size, device)
             x_t, x_0_ignore, mask = self.diffusion.q_sample(x_0=x_0, t=t, non_special_sym_mask=non_special_sym_mask)
@@ -212,6 +240,23 @@ class RDM(pl.LightningModule):
 
         return diffusion_dict
 
+    def forward_decoder(self, decoder_out, **kwargs):
+        if self.diffusion is None:
+            raise NotImplementedError("No diffusion decoding function is provided.")
+
+        def denoising_fn(x_t, t):
+            return self.encoder(
+                x_t=x_t,
+                t=t,
+            )
+
+        new_decoder_out = self.diffusion.sample_step(
+            decoder_out,
+            denoising_fn,
+            **kwargs
+        )
+        return new_decoder_out
+
     def training_step(self, batch, batch_idx):
         diffusion_dict = self._prepare_batch(batch)
 
@@ -221,8 +266,105 @@ class RDM(pl.LightningModule):
         )
 
         loss_dict = {
-            "loss": diffusion_losses["diffusion_loss"],
-            "nll_loss": diffusion_losses.get("diffusion_nll_loss", None),
+            "train/loss": diffusion_losses["diffusion_loss"],
+            "train/nll_loss": diffusion_losses.get("diffusion_nll_loss", None),
         }
+
+        self.log_dict(loss_dict)
         
         return loss_dict
+
+    def validation_step(self, batch, batch_idx):
+        diffusion_dict = self._prepare_batch(batch)
+
+        diffusion_losses, logging_outputs = self.diffusion.compute_loss(
+            inputs=diffusion_dict, 
+            label_smoothing=self.args.label_smoothing,
+        )
+
+        loss_dict = {
+            "validation/loss": diffusion_losses["diffusion_loss"],
+            "validation/nll_loss": diffusion_losses.get("diffusion_nll_loss", None),
+        }
+
+        self.log_dict(loss_dict)
+    
+    def validation_epoch_end(self, outputs: None) -> None:
+        music_tokens = self.generate(batch_size=16, token_seq_len=4096, device=self.device)
+
+        self.log_music_tokens(music_tokens, "validation/generated")
+
+        return super().validation_epoch_end(outputs)
+
+    def initialize_tokens(self, batch_size, token_seq_len):
+        if self.args.diffusion_type in ['absorbing', 'reparam-absorbing']:
+            # for masking diffusion types,
+            # we start with a whole [M=Masked Index] sequence.
+            initial_output_tokens = th.zeros(
+                batch_size, token_seq_len
+            ).fill_(self.unk)
+        else:
+            raise NotImplementedError
+
+        assert initial_output_tokens.shape == (batch_size, token_seq_len)
+
+        return initial_output_tokens
+
+    def generate(self, batch_size, token_seq_len, device, max_iter=100, retain_history=False):
+        # 1 initialize xt ~ q_noise
+        initial_output_tokens = self.initialize_tokens(batch_size, token_seq_len).to(device)
+        initial_output_scores = initial_output_tokens.new_zeros(*initial_output_tokens.size()).type_as(initial_output_tokens)
+        initial_output_masks = initial_output_tokens.ne(self.bos_id)
+
+        prev_decoder_out = RDMDecoderOut(
+            output_tokens=initial_output_tokens,
+            output_scores=initial_output_scores,
+            auxiliary_output={
+                "output_masks": initial_output_masks,
+            },
+            attn=None,
+            step=0,
+            max_step=0,
+            history=None,
+        )
+
+        prev_output_tokens = prev_decoder_out.output_tokens.clone()
+
+        if retain_history:
+            prev_decoder_out = prev_decoder_out._replace(history=[prev_output_tokens])
+
+        for i in range(max_iter):
+            prev_decoder_out = prev_decoder_out._replace(step=i, max_step=max_iter)
+
+            decoder_out = self.forward_decoder(prev_decoder_out)
+
+            prev_decoder_out = decoder_out._replace(
+                output_tokens=decoder_out.output_tokens,
+                output_scores=decoder_out.output_scores,
+                auxiliary_output={k : decoder_out.auxiliary_output[k] for k in decoder_out.auxiliary_output},
+                attn=decoder_out.attn
+                if (decoder_out.attn is not None and decoder_out.attn.size(0) > 0)
+                else None,
+                history=[h for h in decoder_out.history]
+                if decoder_out.history is not None
+                else None,
+            )
+
+            prev_output_tokens = prev_decoder_out.output_tokens.clone()
+        
+        return prev_decoder_out.output_tokens
+
+
+    def log_music_tokens(self, music_tokens: th.Tensor, description: str):
+        # music_tokens: [B, L]
+        music = self.tokenizer.decode(music_tokens)
+        self.log_audio(music, description)
+
+    def log_audio(self, audio, description, caption=""):
+        # audio: [B, L]
+        if isinstance(self.logger, WandbLogger):
+            import wandb
+            self.logger.experiment.log({
+                f"audio/{description}": [wandb.Audio(a, sample_rate=self.SAMPLE_RATE, caption=caption) for a in audio.cpu()],
+        })
+
