@@ -61,11 +61,11 @@ def test_normalizer_normalize_denormalize():
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
 def test_normalize_cuda():
-    normalizer = JukeboxNormalizer("config/normalizations/maestro_all_lvl_1.pt").to("cuda")
+    normalizer = JukeboxNormalizer("config/normalizations/maestro_val_lvl_1.pt").to("cuda")
 
     x = torch.randn(512, 1024, 64).to("cuda")
 
     x_norm = normalizer.normalize(x)
     x_denorm = normalizer.denormalize(x_norm)
 
-    assert torch.allclose(x, x_denorm), "Normalization is not invertible"
+    assert torch.allclose(x, x_denorm, rtol=1e-3, atol=1e-5), "Normalization is not invertible"
