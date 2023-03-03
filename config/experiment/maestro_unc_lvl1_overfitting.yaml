@@ -15,10 +15,10 @@ tags: ["maestro", "jukebox", "lvl1", "unconditional", "overfit"]
 seed: 103
 
 trainer:
-  log_every_n_steps: 10
+  log_every_n_steps: 5
   overfit_batches: 1
   check_val_every_n_epoch: 200
-  accumulate_grad_batches: 20
+  accumulate_grad_batches: 100
   
 
 datamodule:
@@ -26,26 +26,24 @@ datamodule:
   num_workers: 0
   batch_size: 1
   train_aug_shift: false
-  sample_length: 131072  # ~3s
-  shuffle: false
+  sample_length: 65536  # ~3s
+  shuffle_train: false
 
 model:
   target_lvl: 1
   model:
     _target_: src.module.sgconv.GConvStackedDiffusion
-    input_data_dim: 64
-    channels: 32
-    bidirectional: true
-    dropout: 0.0
-    n_layers: 16
+    input_dim: 64
     time_emb_dim: 32
-    timestep_max_index: 500
+    model_dim: 128
+    channels: 16
+    timestep_max_index: 1000
   lr: 2e-4
   lr_warmup_steps: 50
-  inference_batch_size: 4
+  inference_batch_size: 8
   noise_scheduler:
     _target_: diffusers.DPMSolverMultistepScheduler
-    num_train_timesteps: 400
+    num_train_timesteps: 1000
     beta_start: 0.0001
     beta_end: 0.02
     beta_schedule: linear
@@ -54,8 +52,8 @@ model:
   normalizer_path: "config/normalizations/maestro_val_lvl_1.pt"
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
-    max_timestep: 400
-  num_inference_steps: 40
+    max_timestep: 1000
+  num_inference_steps: 60
   generate_unconditional: true
   generate_continuation: false
   log_train_audio: true

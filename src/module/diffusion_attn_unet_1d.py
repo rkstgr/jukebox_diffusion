@@ -237,7 +237,8 @@ class ResidualBlock(nn.Module):
 
 # Noise level (and other) conditioning
 class ResConvBlock(ResidualBlock):
-    def __init__(self, c_in, c_mid, c_out, is_last=False):
+    def __init__(self, c_in, c_mid, c_out, is_last=False, transpose=False):
+        self.transpose = transpose
         skip = None if c_in == c_out else nn.Conv1d(c_in, c_out, 1, bias=False)
         super().__init__([
             nn.Conv1d(c_in, c_mid, 5, padding=2),
@@ -247,6 +248,11 @@ class ResConvBlock(ResidualBlock):
             nn.GroupNorm(1, c_out) if not is_last else nn.Identity(),
             nn.GELU() if not is_last else nn.Identity(),
         ], skip)
+
+    def forward(self, x_in):
+        x_in = rearrange(x_in, "b t c -> b c t")
+        x_out = super().forward(x_in)
+        return rearrange(x_out, "b c t -> b t c")
 
 
 class SelfAttention1d(nn.Module):
@@ -307,35 +313,47 @@ _kernels = {
 
 
 class Downsample1d(nn.Module):
-    def __init__(self, kernel='linear', pad_mode='reflect'):
+    def __init__(self, kernel='linear', pad_mode='reflect', transpose=False):
         super().__init__()
+        self.transpose = transpose
         self.pad_mode = pad_mode
         kernel_1d = torch.tensor(_kernels[kernel])
         self.pad = kernel_1d.shape[0] // 2 - 1
         self.register_buffer('kernel', kernel_1d)
 
     def forward(self, x):
+        if self.transpose:
+            x = rearrange(x, "b t c -> b c t")
         x = F.pad(x, (self.pad,) * 2, self.pad_mode)
         weight = x.new_zeros([x.shape[1], x.shape[1], self.kernel.shape[0]])
         indices = torch.arange(x.shape[1], device=x.device)
         weight[indices, indices] = self.kernel.to(weight)
-        return F.conv1d(x, weight, stride=2)
+        out = F.conv1d(x, weight, stride=2)
+        if self.transpose:
+            out = rearrange(out, "b c t -> b t c")
+        return out
 
 
 class Upsample1d(nn.Module):
-    def __init__(self, kernel='linear', pad_mode='reflect'):
+    def __init__(self, kernel='linear', pad_mode='reflect', transpose=False):
         super().__init__()
+        self.transpose = transpose
         self.pad_mode = pad_mode
         kernel_1d = torch.tensor(_kernels[kernel]) * 2
         self.pad = kernel_1d.shape[0] // 2 - 1
         self.register_buffer('kernel', kernel_1d)
 
     def forward(self, x):
+        if self.transpose:
+            x = rearrange(x, "b t c -> b c t")
         x = F.pad(x, ((self.pad + 1) // 2,) * 2, self.pad_mode)
         weight = x.new_zeros([x.shape[1], x.shape[1], self.kernel.shape[0]])
         indices = torch.arange(x.shape[1], device=x.device)
         weight[indices, indices] = self.kernel.to(weight)
-        return F.conv_transpose1d(x, weight, stride=2, padding=self.pad * 2 + 1)
+        out = F.conv_transpose1d(x, weight, stride=2, padding=self.pad * 2 + 1)
+        if self.transpose:
+            out = rearrange(out, "b c t -> b t c")
+        return out
 
 
 def n_params(module):
