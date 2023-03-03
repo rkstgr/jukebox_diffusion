@@ -48,7 +48,7 @@ model:
     beta_end: 0.02
     beta_schedule: linear
     solver_order: 3
-    prediction_type: "sample"
+    prediction_type: sample
   normalizer_path: "config/normalizations/maestro_val_lvl_1.pt"
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
