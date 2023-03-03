@@ -1,0 +1,3 @@
+_target_: src.model.RDM.RDM
+args:
+  _target_: src.model.RDM.RDMArgs
