@@ -23,7 +23,7 @@ class MaestroDataModule(pl.LightningDataModule):
             batch_size: int,
             num_workers: int,
             sample_length: Optional[int] = 44100 * 10,
-            shuffle: bool = True,
+            shuffle_train: bool = True,
             train_aug_shift: bool = True,
             pin_memory: bool = False,
     ):
@@ -35,7 +35,7 @@ class MaestroDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.sample_length = sample_length
-        self.shuffle = shuffle
+        self.shuffle_train = shuffle_train
         self.train_aug_shift = train_aug_shift
         self.pin_memory = pin_memory
 
@@ -44,12 +44,12 @@ class MaestroDataModule(pl.LightningDataModule):
         self.test_dataset = None
 
     def setup(self, stage=None):
-        self.train_dataset = MaestroDataset(self.root_dir, split="train", sample_length=self.sample_length, aug_shift=self.train_aug_shift)
-        self.val_dataset = MaestroDataset(self.root_dir, split="validation", sample_length=self.sample_length, shuffle=True) # shuffle only once on initialization
+        self.train_dataset = MaestroDataset(self.root_dir, split="train", sample_length=self.sample_length, aug_shift=self.train_aug_shift, initial_shuffle=True)
+        self.val_dataset = MaestroDataset(self.root_dir, split="validation", sample_length=self.sample_length, initial_shuffle=True) # shuffle only once on initialization
         self.test_dataset = MaestroDataset(self.root_dir, split="test", sample_length=self.sample_length)
 
     def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=self.shuffle,
+        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=self.shuffle_train,
                           num_workers=self.num_workers, pin_memory=self.pin_memory)
 
     def val_dataloader(self):

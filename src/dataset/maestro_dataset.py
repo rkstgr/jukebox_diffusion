@@ -18,7 +18,7 @@ class MaestroDataset(Dataset):
             sample_length: Optional[int] = None,
             mono: bool = True,
             aug_shift: bool = False,
-            shuffle: bool = False
+            initial_shuffle: bool = False
     ):
         super().__init__()
         self.sample_length = sample_length
@@ -41,16 +41,16 @@ class MaestroDataset(Dataset):
         whitelist = [Path(f).stem for f in self.metadata.audio_filename]
         self.dataset = FilesAudioDataset(root_dir=self.root_dir, sr=44100, channels=2, sample_length=sample_length,
                                          aug_shift=aug_shift, whitelist=whitelist)
-        if shuffle:
+        if initial_shuffle:
             # generate a random permutation of the indices
             self.indices = torch.randperm(len(self.dataset))
-        self.shuffle = shuffle
+        self.initial_shuffle = initial_shuffle
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, index) -> JukeboxSample:
-        if self.shuffle:
+        if self.initial_shuffle:
             index = self.indices[index]
 
         audio_sample = torch.from_numpy(self.dataset[index])
