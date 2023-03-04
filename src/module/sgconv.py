@@ -583,11 +583,11 @@ class GConvStackedDiffusion(nn.Module):
         transposed
     """
 
-    def __init__(self, input_dim, time_emb_dim, model_dim, channels, timestep_max_index=1000):
+    def __init__(self, input_dim, time_emb_dim, model_dim, channels, depth=4, timestep_max_index=1000):
         super().__init__()
         self.timestep_embed = IntegerFourierEmbedding(time_emb_dim, min_index=0, max_index=timestep_max_index)
         self.initial_linear = nn.Linear(input_dim+time_emb_dim, model_dim)
-        self.model = GConvHybrid(data_dim=model_dim, channels=channels)
+        self.model = GConvHybrid(data_dim=model_dim, channels=channels, depth=depth)
         self.final_linear = nn.Linear(model_dim, input_dim)
 
         self.output_dim = input_dim
