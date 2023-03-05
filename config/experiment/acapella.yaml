@@ -10,7 +10,7 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["acapella", "lvl2",]
+tags: []
 
 seed: 42
 
@@ -25,7 +25,7 @@ datamodule:
 
 model:
   _target_: src.model.acapella_diffusion.AcapellaDiffusion
-  target_lvl: 2
+  target_lvl: 1
   model:
     _target_: src.module.sgconv.GConvStackedDiffusion
     input_dim: 64
@@ -35,7 +35,7 @@ model:
     channels: 16
     depth: 4
     timestep_max_index: 1000
-  lr: 2e-4
+  lr: 1e-4
   lr_warmup_steps: 500
   inference_batch_size: 16
   noise_scheduler:
@@ -46,15 +46,16 @@ model:
     beta_schedule: linear
     solver_order: 3
     prediction_type: sample
-  normalizer_path: "config/normalizations/maestro_train_lvl_2.pt"
+  normalizer_path: "config/normalizations/maestro_val_lvl_1.pt"
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000
-  num_inference_steps: 80
+  num_inference_steps: 20
   generate_unconditional: true
   generate_continuation: false
   log_train_audio: true
   skip_audio_logging: false
+  guidance_scales: [1, 5, 10]
   conditioning: # build all possible combinations of conditionings
     gender: ["","Female","Male"]
     language: ["","English","Italian","Persian","Spanish"]
@@ -63,8 +64,8 @@ model:
 
 logger:
   wandb:
-    project: "jukebox_diffusion"
-    name: "acapella_lvl2"
+    project: "acapella_diffusion"
+    name: "sghybrid_lvl1"
     tags: ${tags}
   tensorboard:
     name: "jukebox_diffusion"

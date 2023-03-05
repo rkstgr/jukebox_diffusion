@@ -10,6 +10,7 @@ import torchaudio
 from diffusers import SchedulerMixin, PNDMScheduler
 from einops import rearrange
 from pytorch_lightning.loggers import WandbLogger
+import wandb
 from src.diffusion.pipeline.conditional_pipeline import AcapellaPipeline
 
 from src.model.jukebox_vqvae import JukeboxVQVAEModel
@@ -199,17 +200,17 @@ class AcapellaDiffusion(pl.LightningModule):
     def validation_epoch_end(self, outputs) -> None:
         if self.logger and self.hparams.generate_unconditional:
             seed = torch.randint(0, 1000000, (1,)).item()
-
-            embeddings = self.generate_conditionally(
-                conditioning=self.conditioning,
-                seq_len=outputs[0].shape[1],
-                seed=seed,
-            )
-
-            # TODO plot as table
-            audio = self.decode(embeddings, debug=True)
-            self.log_audio(audio, "unconditional",
-                           f"epoch_{self.current_epoch}_seed_{seed}")
+            audio = []
+            guidance_scales = self.hparams.guidance_scales
+            for guidance in guidance_scales:
+                embeddings = self.generate_conditionally(
+                    conditioning=self.conditioning,
+                    guidance_scale=guidance,
+                    seq_len=outputs[0].shape[1],
+                    seed=seed,
+                )
+                audio.append(self.decode(embeddings, debug=True))
+            self.log_table(audio, guidance_scales, self.conditioning, "val/generated")
 
         if self.logger and len(outputs) > 0 and self.hparams.generate_continuation:
             seed = torch.randint(0, 1000000, (1,)).item()
@@ -233,6 +234,23 @@ class AcapellaDiffusion(pl.LightningModule):
 
     def sample_timesteps(self, x_shape: torch.Size):
         return self.timestep_sampler.sample_timesteps(x_shape)
+
+    def log_table(self, audios, guidance_scales, conditioning, key):
+        def to_audio(a):
+            return wandb.Audio(a.cpu(), sample_rate=self.SAMPLE_RATE)
+        
+
+        table_data = []
+        for i in range(len(conditioning)):
+            row = [conditioning[i]["gender"], conditioning[i]["language"], conditioning[i]["singer"]]
+            for a, g in zip(audios, guidance_scales):
+                row.append(to_audio(a[i]))
+            table_data.append(row)
+
+        table = wandb.Table(columns=["gender", "language", "singer", *[f"guidance={g}" for g in guidance_scales]], data=table_data)
+        self.logger.experiment.log({
+            key: table
+        })
 
     def log_audio(self, audio, key, caption=None):
         if self.hparams.skip_audio_logging:

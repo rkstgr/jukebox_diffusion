@@ -8,12 +8,12 @@ from src.diffusion.pipeline import SequencePipeline
 
 
 class AcapellaPipeline(SequencePipeline):
-    def __init__(self, unet, scheduler, singer_embedding, lang_embedding, gender_embedding, *args, **kwargs):
+    def __init__(self, unet, scheduler, gender_embedding, language_embedding, singer_embedding, *args, **kwargs):
         super().__init__()
         self.unet = unet
         self.scheduler = scheduler
         self.singer_embedding = singer_embedding
-        self.lang_embedding = lang_embedding
+        self.language_embedding = language_embedding
         self.gender_embedding = gender_embedding
         self.language_tokenizer = AcapellaLanguage
         self.gender_tokenizer = AcapellaGender
@@ -52,16 +52,18 @@ class AcapellaPipeline(SequencePipeline):
         if not isinstance(conditioning, list):
             conditioning = [conditioning]
 
-        gender_id = torch.tensor([self.language_tokenizer[cond.get(
-            "gender", "")] for cond in conditioning]).long()
-        language_id = torch.tensor([self.language_tokenizer[cond.get(
-            "language", "")] for cond in conditioning]).long()
-        singer_id = torch.tensor([self.language_tokenizer[cond.get(
-            "singer", "")] for cond in conditioning]).long()
+        if any(cond.get("singer", "") != "" for cond in conditioning):
+            raise NotImplementedError("Singer conditioning not implemented yet.")
+
+        gender_id = torch.tensor([self.gender_tokenizer.get_id(cond.get(
+            "gender", "")) for cond in conditioning]).long().to(self.device)
+        language_id = torch.tensor([self.language_tokenizer.get_id(cond.get(
+            "language", "")) for cond in conditioning]).long().to(self.device)
+        singer_id = torch.zeros_like(language_id).to(self.device)
 
         singer_embedding = self.singer_embedding(singer_id)
         language_embedding = self.language_embedding(language_id)
-        gender_embedding = self.g_embedding(gender_id)
+        gender_embedding = self.gender_embedding(gender_id)
 
         # concatenate embeddings
         context = torch.cat([gender_embedding, language_embedding, singer_embedding
@@ -83,7 +85,7 @@ class AcapellaPipeline(SequencePipeline):
         seq = seq.to(self.device)
         report_stats(seq, "Initial")
 
-        unknown_context = torch.zeros_like(context)
+        unknown_context = torch.zeros_like(context) # this is only valid as long as the unknown ids are embedded with zeros
 
         # set step values
         self.scheduler.set_timesteps(num_inference_steps)
