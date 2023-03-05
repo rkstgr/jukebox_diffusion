@@ -9,7 +9,7 @@ from src.diffusion.pipeline import UnconditionalPipeline
 
 # Assume DDIMScheduler
 
-class TestModel(nn.Module):
+class Model(nn.Module):
     def __init__(self, scheduler):
         super().__init__()
         self.scheduler = scheduler
@@ -33,7 +33,7 @@ def scheduler():
 
 @pytest.fixture
 def model(scheduler):
-    return TestModel(scheduler)
+    return Model(scheduler)
 
 
 def test_test_model(model, scheduler):

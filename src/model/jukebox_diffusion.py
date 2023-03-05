@@ -28,6 +28,7 @@ class JukeboxDiffusion(pl.LightningModule):
             target_lvl: int = 2,
             lr: float = 1e-4,
             lr_warmup_steps: int = 1000,
+            loss_fn: str = "mse",
             num_inference_steps: int = 50,
             inference_batch_size: int = 1,
             noise_scheduler: Optional[SchedulerMixin] = None,
@@ -95,16 +96,26 @@ class JukeboxDiffusion(pl.LightningModule):
         noisy_x = self.noise_scheduler.add_noise(x, noise, timesteps)
         model_output = self.model(noisy_x, timesteps)
 
-        # compute between noise & noise_pred only where timesteps > 0
-        loss = F.mse_loss(
-            model_output,
-            noise,
-        )
+
+        prediction_type = self.noise_scheduler.prediction_type
+        loss_fn = F.mse_loss if self.hparams.loss_fn == "mse" else F.l1_loss
+        if prediction_type == "sample":
+            loss = loss_fn(
+                x,
+                model_output,
+            )
+        elif prediction_type == "epsilon":
+            loss = loss_fn(
+                noise,
+                model_output,
+            )
+        elif prediction_type == "v-prediction":
+            raise NotImplementedError
 
         return loss
 
     def training_step(self, batch, batch_idx):
-        target = self.encode(batch, debug=batch_idx == 0)
+        target = self.encode(batch, debug=batch_idx == 1)
         loss = self(target)
         self.log_dict({
             "train/loss": loss,

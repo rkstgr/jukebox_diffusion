@@ -1,6 +1,6 @@
 import os
 
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import DataLoader, ConcatDataset, Subset
 
 from src.datamodule.maestro_datamodule import MaestroDataModule
 from src.dataset.maestro_dataset import MaestroDataset
@@ -25,8 +25,11 @@ def main(dataset_name: str, embedding_lvl: int):
     device = "cuda"
 
     dataset = datasets[dataset_name]
+    # take subset of dataset
+    sub_idx = list(range(0, len(dataset), 10))
+    dataset = Subset(dataset, sub_idx)
 
-    dataloader = DataLoader(dataset, batch_size=16, shuffle=False, num_workers=4, pin_memory=True)
+    dataloader = DataLoader(dataset, batch_size=16, shuffle=True, num_workers=4, pin_memory=True)
 
     normalizer = JukeboxNormalizer()
     vqvae = JukeboxVQVAEModel().to(device)
@@ -40,4 +43,4 @@ def main(dataset_name: str, embedding_lvl: int):
 
 
 if __name__ == "__main__":
-    main("maestro_val", 1)
+    main("maestro_train", 2)

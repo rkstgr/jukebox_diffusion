@@ -5,6 +5,7 @@ from tests.conftest import depends_on_maestro_dataset
 
 SEQUENCE_LEN = 44100
 
+
 @depends_on_maestro_dataset
 def test_maestro_dataset():
     dataset = MaestroDataset(

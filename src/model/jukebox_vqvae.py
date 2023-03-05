@@ -30,6 +30,15 @@ class JukeboxVQVAEModel(nn.Module):
         return embeddings
 
     @torch.no_grad()
+    def encode_quantized(self, audio, lvl):
+        """Encode the audio and then quantize the embeddings with the VQ-VAE"""
+        audio = rearrange(audio, "b t c -> b c t")
+        encoder = self.jukebox_vqvae.encoders[lvl].to(audio.device)
+        embeddings = encoder(audio)[-1] # [B, 64, L]
+        music_tokens = self.jukebox_vqvae.bottleneck.level_blocks[lvl].encode(embeddings) # [B, L]
+        return music_tokens
+
+    @torch.no_grad()
     def decode(self, embeddings, lvl):
         embeddings = rearrange(embeddings, "b t c -> b c t")
         decoder = self.jukebox_vqvae.decoders[lvl].to(embeddings.device)

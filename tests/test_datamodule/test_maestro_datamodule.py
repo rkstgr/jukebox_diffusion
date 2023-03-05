@@ -1,7 +1,6 @@
 import os
 
 import pytest
-import torch
 
 from src.datamodule.maestro_datamodule import MaestroDataModule
 from tests.conftest import depends_on_maestro_dataset
@@ -10,6 +9,7 @@ BATCH_SIZE = 2
 SAMPLE_LENGTH = 44100
 DATA_DIMENSION = 1
 TARGET_SHAPE = (BATCH_SIZE, SAMPLE_LENGTH, DATA_DIMENSION)
+
 
 @pytest.fixture
 def datamodule():

@@ -4,6 +4,7 @@ import math
 from functools import partial
 
 import opt_einsum as oe
+from src.module.diffusion_attn_unet_1d import Downsample1d, ResConvBlock, Upsample1d
 from src.module.integer_encoding import IntegerFourierEmbedding
 import torch
 import torch.nn as nn
@@ -530,6 +531,46 @@ class GConvStacked(nn.Module):
             x = layer(x)
         return x
 
+class GConvHybrid(nn.Module):
+    def __init__(self, data_dim: int, channels: int = 32, dropout: float = 0.0, depth: int = 4) -> None:
+        super().__init__()
+        input_dim = data_dim
+        down_modules = []
+        up_modules = []
+        
+        dim = input_dim
+
+        down_modules = []
+        for i in range(depth):
+            down_modules.append(ResConvBlock(c_in=dim, c_mid=input_dim*2, c_out=dim, transpose=True))
+            down_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout))
+            if i % 2 == 0:
+                down_modules.append(nn.Linear(dim, dim*2)),
+                dim *= 2
+            down_modules.append(Downsample1d("cubic", transpose=True))
+        self.down = nn.ModuleList(down_modules)
+
+        self.mid = SGConvBlock(dim, channels, bidirectional=True, dropout=dropout)
+
+        up_modules = []
+        for i in range(depth):
+            up_modules.append(Upsample1d("cubic", transpose=True))
+            if i % 2 == 0:
+                up_modules.append(nn.Linear(dim, dim//2)),
+                dim //= 2
+            up_modules.append(ResConvBlock(c_in=dim, c_mid=input_dim*2, c_out=dim, transpose=True))
+            up_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout))
+        self.up = nn.ModuleList(up_modules)
+
+    def forward(self, x):
+        # x = [batch size, seq len, d_model]
+        for i, layer in enumerate(self.down):
+            x = layer(x)
+        x = self.mid(x) # 128 * 512
+        for layer in self.up:
+            x = layer(x)
+        return x
+        
 
 class GConvStackedDiffusion(nn.Module):
     """
@@ -542,14 +583,14 @@ class GConvStackedDiffusion(nn.Module):
         transposed
     """
 
-    def __init__(self, input_data_dim, channels, bidirectional=True, dropout=0.0, n_layers=10,  time_emb_dim=16, timestep_max_index=1000):
+    def __init__(self, input_dim, time_emb_dim, model_dim, channels, depth=4, timestep_max_index=1000):
         super().__init__()
-        self.input_data_dim = input_data_dim
         self.timestep_embed = IntegerFourierEmbedding(time_emb_dim, min_index=0, max_index=timestep_max_index)
-        self.model = GConvStacked(input_data_dim+time_emb_dim, channels, bidirectional, dropout, n_layers)
-        self.ff = nn.Linear(input_data_dim+time_emb_dim, input_data_dim)
+        self.initial_linear = nn.Linear(input_dim+time_emb_dim, model_dim)
+        self.model = GConvHybrid(data_dim=model_dim, channels=channels, depth=depth)
+        self.final_linear = nn.Linear(model_dim, input_dim)
 
-        self.output_dim = input_data_dim
+        self.output_dim = input_dim
 
     def forward(self, x_in, t, cond=None):
         """
@@ -588,8 +629,9 @@ class GConvStackedDiffusion(nn.Module):
             inputs.append(cond)
 
         x_net = torch.cat(inputs, dim=-1)
+        x_net = self.initial_linear(x_net)
         out = self.model(x_net)
-        out = self.ff(out)
+        out = self.final_linear(out)
         return out
 
     @property
@@ -604,15 +646,9 @@ class GConvStackedDiffusion(nn.Module):
 if __name__ == "__main__":
     from torchinfo import summary
 
-    test_layer = GConvStacked(
-        d_model=128,
-        bidirectional=True,
-        channels=8,
-        dropout=0.0,
-        n_layers=12,
-    )
+    model = GConvHybrid(96, 32)
 
     test_x = torch.randn(1, 2048, 128)
-    y = test_layer(test_x)
+    y = model(test_x)
 
-    summary(test_layer, input_data=(test_x,), verbose=1)
+    summary(model, input_data=(test_x,), verbose=1)
