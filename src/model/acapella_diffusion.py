@@ -106,9 +106,8 @@ class AcapellaDiffusion(pl.LightningModule):
         language_embedding = self.language_embedding(language_id)
         gender_embedding = self.g_embedding(gender_id)
 
-        # concatenate embeddings
-        cond_emb = torch.cat([singer_embedding, language_embedding,
-                         gender_embedding], dim=1).unsqueeze(1)  # (B, 1, 16)
+        cond_emb = torch.cat([gender_embedding, language_embedding, singer_embedding
+                             ], dim=1).unsqueeze(1)
 
         # Sample noise that we'll add to the latents
         noise = torch.randn_like(x, dtype=x.dtype, device=x.device).float()
@@ -328,12 +327,12 @@ class AcapellaDiffusion(pl.LightningModule):
             generator=generator,
         )
 
-    def generate_unconditionally(self, batch_size=1, seq_len=2048, num_inference_steps=None, seed=None):
+    def generate_conditionally(self, batch_size=1, seq_len=2048, num_inference_steps=None, seed=None):
         if num_inference_steps is None:
             num_inference_steps = self.hparams.num_inference_steps
         generator = torch.Generator().manual_seed(seed) if seed is not None else None
 
-        pipeline = UnconditionalPipeline(
+        pipeline = ConditionalPipeline(
             unet=self.model,
             scheduler=self.noise_scheduler,
         ).to(self.device)

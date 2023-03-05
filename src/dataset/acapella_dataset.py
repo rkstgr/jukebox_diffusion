@@ -10,6 +10,48 @@ from src.dataset.files_dataset import FilesAudioDataset
 
 JukeboxSample = Union[torch.Tensor, Dict[int, torch.Tensor]]
 
+class TokenClass:
+    values = {}
+
+    @classmethod
+    def get_id(cls, token: str):
+        return cls.values[token]
+
+    @classmethod
+    def get_token(cls, id: int):
+        return list(cls.values.keys())[list(cls.values.values()).index(id)]
+
+    @classmethod
+    def get_all_ids(cls):
+        return list(cls.values.values())
+
+class AcapellaLanguage(TokenClass):
+    values = {
+        "": 0,
+        "Arabic": 1,
+        "Assamese": 2,
+        "Croatian": 3,
+        "English": 4,
+        "Greek": 5,
+        "Hindi": 6,
+        "Indonesian": 7,
+        "Italian": 8,
+        "Kannada": 9,
+        "Malayalam": 10,
+        "Persian": 11,
+        "Portuguese": 12,
+        "Spanish": 13,
+        "Tamil": 14,
+        "Turkish": 15,
+        "Ukrainian": 16
+    }
+
+class AcapellaGender(TokenClass):
+    values = {
+        "": 0,
+        "Female": 1,
+        "Male": 2
+    }
 
 class AcapellaDataset(Dataset):
     def __init__(
