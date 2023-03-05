@@ -10,7 +10,7 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: []
+tags: ["sghybrid", "acapella", "lvl1"]
 
 seed: 42
 
@@ -20,7 +20,7 @@ trainer:
 
 datamodule:
   num_workers: 4
-  batch_size: 16
+  batch_size: 20
   sample_length: 262144
 
 model:
