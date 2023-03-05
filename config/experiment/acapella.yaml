@@ -16,16 +16,17 @@ seed: 42
 
 trainer:
   log_every_n_steps: 2
-  accumulate_grad_batches: 8
+  check_val_every_n_epoch: 10
+  accumulate_grad_batches: 4
 
 datamodule:
   num_workers: 4
-  batch_size: 20
+  batch_size: 100
   sample_length: 262144
 
 model:
   _target_: src.model.acapella_diffusion.AcapellaDiffusion
-  target_lvl: 1
+  target_lvl: 2
   model:
     _target_: src.module.sgconv.GConvStackedDiffusion
     input_dim: 64
@@ -46,7 +47,7 @@ model:
     beta_schedule: linear
     solver_order: 3
     prediction_type: sample
-  normalizer_path: "config/normalizations/maestro_val_lvl_1.pt"
+  normalizer_path: "config/normalizations/maestro_train_lvl_2.pt"
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000
@@ -65,7 +66,7 @@ model:
 logger:
   wandb:
     project: "acapella_diffusion"
-    name: "sghybrid_lvl1"
+    name: "sghybrid_lvl2"
     tags: ${tags}
   tensorboard:
     name: "jukebox_diffusion"
