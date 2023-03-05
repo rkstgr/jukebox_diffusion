@@ -50,7 +50,7 @@ model:
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000
-  num_inference_steps: 20
+  num_inference_steps: 50
   generate_unconditional: true
   generate_continuation: false
   log_train_audio: true
