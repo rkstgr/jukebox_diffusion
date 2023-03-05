@@ -55,7 +55,7 @@ model:
   generate_continuation: false
   log_train_audio: true
   skip_audio_logging: false
-  conditionings:
+  conditioning: # build all possible combinations of conditionings
     gender: ["","Female","Male"]
     language: ["","English","Italian","Persian","Spanish"]
     singer: [""]

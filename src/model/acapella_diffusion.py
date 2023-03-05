@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
+import itertools
 
 import pytorch_lightning as pl
 import torch
@@ -9,6 +10,7 @@ import torchaudio
 from diffusers import SchedulerMixin, PNDMScheduler
 from einops import rearrange
 from pytorch_lightning.loggers import WandbLogger
+from src.diffusion.pipeline.conditional_pipeline import AcapellaPipeline
 
 from src.model.jukebox_vqvae import JukeboxVQVAEModel
 from src.model.jukebox_normalize import JukeboxNormalizer
@@ -42,6 +44,7 @@ class AcapellaDiffusion(pl.LightningModule):
             skip_audio_logging: bool = False,
             weight_decay: float = 0.01,
             load_vqvae: bool = True,
+            conditioning = None,
             *args,
             **kwargs,
     ):
@@ -52,7 +55,7 @@ class AcapellaDiffusion(pl.LightningModule):
 
         self.singer_embedding = torch.nn.Embedding(262, 10, padding_idx=0)
         self.language_embedding = torch.nn.Embedding(17, 4, padding_idx=0)
-        self.g_embedding = torch.nn.Embedding(3, 2, padding_idx=0)
+        self.gender_embedding = torch.nn.Embedding(3, 2, padding_idx=0)
 
         if noise_scheduler is None:
             print("Using default noise scheduler")
@@ -90,6 +93,23 @@ class AcapellaDiffusion(pl.LightningModule):
 
         self.lr_scheduler = None
 
+        # conditioining is Dict with gender, language, singer and a list of values
+        # produce all combinations of conditioning
+        self.conditioning = []
+        for v in itertools.product(
+            conditioning.get("gender", [""]),
+            conditioning.get("language", [""]),
+            conditioning.get("singer", [""]),
+        ):
+            self.conditioning.append(
+                {
+                    "gender": v[0],
+                    "language": v[1],
+                    "singer": v[2],
+                }
+            )
+
+
     def forward(self, x, cond):
         """Computes the loss
 
@@ -104,7 +124,7 @@ class AcapellaDiffusion(pl.LightningModule):
 
         singer_embedding = self.singer_embedding(singer_id)
         language_embedding = self.language_embedding(language_id)
-        gender_embedding = self.g_embedding(gender_id)
+        gender_embedding = self.gender_embedding(gender_id)
 
         cond_emb = torch.cat([gender_embedding, language_embedding, singer_embedding
                              ], dim=1).unsqueeze(1)
@@ -180,11 +200,13 @@ class AcapellaDiffusion(pl.LightningModule):
         if self.logger and self.hparams.generate_unconditional:
             seed = torch.randint(0, 1000000, (1,)).item()
 
-            embeddings = self.generate_unconditionally(
-                batch_size=self.hparams.inference_batch_size,
+            embeddings = self.generate_conditionally(
+                conditioning=self.conditioning,
                 seq_len=outputs[0].shape[1],
                 seed=seed,
             )
+
+            # TODO plot as table
             audio = self.decode(embeddings, debug=True)
             self.log_audio(audio, "unconditional",
                            f"epoch_{self.current_epoch}_seed_{seed}")
@@ -280,7 +302,7 @@ class AcapellaDiffusion(pl.LightningModule):
             list(self.parameters()) + 
             list(self.singer_embedding.parameters()) +
             list(self.language_embedding.parameters()) +
-            list(self.g_embedding.parameters()),
+            list(self.gender_embedding.parameters()),
             lr=self.hparams.lr,
             weight_decay=self.hparams.weight_decay,
         )
@@ -327,19 +349,23 @@ class AcapellaDiffusion(pl.LightningModule):
             generator=generator,
         )
 
-    def generate_conditionally(self, batch_size=1, seq_len=2048, num_inference_steps=None, seed=None):
+    def generate_conditionally(self, conditioning, guidance_scale=1.0, seq_len=2048, num_inference_steps=None, seed=None):
         if num_inference_steps is None:
             num_inference_steps = self.hparams.num_inference_steps
         generator = torch.Generator().manual_seed(seed) if seed is not None else None
 
-        pipeline = ConditionalPipeline(
+        pipeline = AcapellaPipeline(
             unet=self.model,
             scheduler=self.noise_scheduler,
+            singer_embedding=self.singer_embedding,
+            language_embedding=self.language_embedding,
+            gender_embedding=self.gender_embedding,
         ).to(self.device)
 
         jukebox_latents = pipeline(
+            conditioning=conditioning, # len of conditioning dictates batch size
+            guidance_scale=guidance_scale,
             generator=generator,
-            batch_size=batch_size,
             seq_len=seq_len,
             num_inference_steps=num_inference_steps
         )
