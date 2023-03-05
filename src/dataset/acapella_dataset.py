@@ -59,7 +59,7 @@ class AcapellaDataset(Dataset):
         self.gender_ids = self.load_ids(self.root_dir / "gender_ids.csv")
 
         self.audio_dataset = FilesAudioDataset(root_dir=self.root_dir, sr=44100, channels=2, sample_length=sample_length,
-                                         aug_shift=aug_shift)
+                                         aug_shift=aug_shift, whitelist=self.metadata.keys())
         if initial_shuffle:
             # generate a random permutation of the indices
             self.indices = torch.randperm(len(self.audio_dataset))
@@ -87,9 +87,9 @@ class AcapellaDataset(Dataset):
         # audio_sample: (sample_length, channels)
         return {
             "audio": audio_sample,
-            "singer_id": self.singer_ids[labels["Singer"]],
-            "language_id": self.language_ids[labels["Language"]],
-            "gender_id": self.gender_ids[labels["Gender"]]
+            "singer_id": self.singer_ids.get(labels["Singer"], torch.tensor(0)),
+            "language_id": self.language_ids.get(labels["Language"], torch.tensor(0)),
+            "gender_id": self.gender_ids.get(labels["Gender"], torch.tensor(0))
         }
 
 

@@ -3,7 +3,7 @@ from typing import Optional
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 
-from src.dataset.maestro_dataset import MaestroDataset
+from src.dataset.acapella_dataset import AcapellaDataset
 
 
 class AcapellaDataModule(pl.LightningDataModule):

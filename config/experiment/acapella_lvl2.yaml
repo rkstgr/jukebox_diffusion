@@ -10,27 +10,27 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["maestro", "jukebox", "lvl2", "unconditional"]
+tags: ["acapella", "lvl2",]
 
 seed: 42
 
 trainer:
-  _convert_: "all"
   log_every_n_steps: 2
   accumulate_grad_batches: 8
 
 datamodule:
-  root_dir: ${oc.env:ACAPELLA_DATASET_DIR}
   num_workers: 4
-  batch_size: 36
-  sample_length: 524288
+  batch_size: 16
+  sample_length: 262144
 
 model:
+  _target_: src.model.acapella_diffusion.AcapellaDiffusion
   target_lvl: 2
   model:
     _target_: src.module.sgconv.GConvStackedDiffusion
     input_dim: 64
     time_emb_dim: 32
+    cond_dim: 16
     model_dim: 128
     channels: 16
     depth: 4
@@ -60,6 +60,7 @@ model:
 logger:
   wandb:
     project: "jukebox_diffusion"
+    name: "acapella_lvl2"
     tags: ${tags}
   tensorboard:
     name: "jukebox_diffusion"
