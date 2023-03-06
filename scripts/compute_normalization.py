@@ -3,6 +3,7 @@ import os
 from torch.utils.data import DataLoader, ConcatDataset, Subset
 
 from src.datamodule.maestro_datamodule import MaestroDataModule
+from src.dataset.acapella_dataset import AcapellaDataset
 from src.dataset.maestro_dataset import MaestroDataset
 from src.model.jukebox_normalize import JukeboxNormalizer
 from src.model.jukebox_vqvae import JukeboxVQVAEModel
@@ -10,37 +11,43 @@ from src.model.jukebox_vqvae import JukeboxVQVAEModel
 
 
 datasets = {
-    "maestro_val": MaestroDataset(os.environ["MAESTRO_DATASET_DIR"], split="validation", sample_length=44100*10, aug_shift=False),
-    "maestro_train": MaestroDataset(os.environ["MAESTRO_DATASET_DIR"], split="train", sample_length=44100*10, aug_shift=False),
-    "maestro_test": MaestroDataset(os.environ["MAESTRO_DATASET_DIR"], split="test", sample_length=44100*10, aug_shift=False),
-
-    "maestro_all": ConcatDataset([
+    "maestro": lambda: ConcatDataset([
         MaestroDataset(os.environ["MAESTRO_DATASET_DIR"], split="train", sample_length=44100*20, aug_shift=False),
         MaestroDataset(os.environ["MAESTRO_DATASET_DIR"], split="validation", sample_length=44100*20, aug_shift=False),
         MaestroDataset(os.environ["MAESTRO_DATASET_DIR"], split="test", sample_length=44100*20, aug_shift=False),
     ]),
+
+    "acapella": lambda: AcapellaDataset(os.environ["ACAPELLA_DATASET_DIR"], split="all", sample_length=44100*20, aug_shift=False),
 }
 
-def main(dataset_name: str, embedding_lvl: int):
+def main(dataset_name: str, embedding_lvl: int, subset: int = 10):
     device = "cuda"
 
-    dataset = datasets[dataset_name]
+    dataset = datasets[dataset_name]()
     # take subset of dataset
-    sub_idx = list(range(0, len(dataset), 10))
+    sub_idx = list(range(0, len(dataset), subset))
     dataset = Subset(dataset, sub_idx)
 
-    dataloader = DataLoader(dataset, batch_size=16, shuffle=True, num_workers=4, pin_memory=True)
+    dataloader = DataLoader(dataset, batch_size=16, shuffle=False, num_workers=4, pin_memory=True)
 
     normalizer = JukeboxNormalizer()
     vqvae = JukeboxVQVAEModel().to(device)
 
-    apply_fn = lambda x: vqvae.encode(x.to(device), lvl=embedding_lvl).detach().to("cpu")
+    apply_fn = lambda x: vqvae.encode(x["audio"].to(device), lvl=embedding_lvl).detach().to("cpu")
 
     mean, std = normalizer.compute_stats_iter(dataloader, apply_fn=apply_fn, total=len(dataloader))
     print(mean)
     print(std)
-    normalizer.save_stats(f"{dataset_name}_lvl_{embedding_lvl}.pt", (mean, std))
+    normalizer.save_stats(f"normalizations/{dataset_name}_lvl_{embedding_lvl}.pt", (mean, std))
 
 
 if __name__ == "__main__":
-    main("maestro_train", 2)
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", type=str, default="maestro_train")
+    parser.add_argument("--embedding_lvl", type=int, default=2)
+    parser.add_argument("--subset", type=int, default=10)
+    args = parser.parse_args()
+
+    main(args.dataset, args.embedding_lvl, subset=args.subset)
