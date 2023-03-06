@@ -23,6 +23,7 @@ class JukeboxVQVAEModel(nn.Module):
     
     @torch.no_grad()
     def encode(self, audio, lvl):
+        # audio: [Batch, Time, 1]
         audio = rearrange(audio, "b t c -> b c t")
         encoder = self.jukebox_vqvae.encoders[lvl].to(audio.device)
         embeddings = encoder(audio)[-1]
