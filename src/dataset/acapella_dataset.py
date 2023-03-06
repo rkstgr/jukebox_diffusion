@@ -73,6 +73,7 @@ class AcapellaDataset(Dataset):
             "train",
             "validation",
             "test",
+            "all"
         ], f"Split must be one of 'train', 'validation', 'test', but got {split}"
         self.split = split
         self.mono = mono
@@ -85,7 +86,8 @@ class AcapellaDataset(Dataset):
         # split
         generator = np.random.default_rng(42)
         self.metadata["split"] = generator.choice(["train", "validation", "test"], size=len(self.metadata), p=[0.8, 0.1, 0.1])
-        self.metadata = self.metadata.query("split == @self.split")
+        if self.split != "all":
+            self.metadata = self.metadata.query("split == @self.split")
         self.metadata = {
             r["ID"]: {
                 "Singer": r["Singer"],
