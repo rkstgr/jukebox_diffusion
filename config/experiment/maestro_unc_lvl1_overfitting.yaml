@@ -16,15 +16,15 @@ seed: 103
 
 trainer:
   log_every_n_steps: 5
-  overfit_batches: 1
-  check_val_every_n_epoch: 200
+  overfit_batches: 8
+  check_val_every_n_epoch: 10
   accumulate_grad_batches: 100
   
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 0
-  batch_size: 1
+  batch_size: 4
   train_aug_shift: false
   sample_length: 65536  # ~3s
   shuffle_train: false
@@ -49,11 +49,11 @@ model:
     beta_schedule: linear
     solver_order: 3
     prediction_type: sample
-  normalizer_path: "config/normalizations/maestro_val_lvl_1.pt"
+  normalizer_path: "normalizations/maestro_val_lvl_1.pt"
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000
-  num_inference_steps: 60
+  num_inference_steps: 20
   generate_unconditional: true
   generate_continuation: false
   log_train_audio: true
