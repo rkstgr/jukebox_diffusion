@@ -16,6 +16,7 @@ import torch
 
 from src.model.jukebox_diffusion import JukeboxDiffusion
 from src.model.jukebox_upsampler import JukeboxDiffusionUpsampler
+from src.model.jukebox_vqvae import JukeboxVQVAEModel
 from src.module.diffusion_attn_unet_1d import DiffusionAttnUnet1D
 from diffusers import DPMSolverMultistepScheduler
 from src.diffusion.timestep_sampler import TimeConstantSampler
@@ -50,7 +51,7 @@ unconditional_config = {
 }
 
 # lvl2 -> lvl1
-upsampler1_config = {
+upsampler_lvl2_config = {
     "model_config": {
         "source_lvl": 2,
         "target_lvl": 1,
@@ -80,7 +81,7 @@ upsampler1_config = {
 }
 
 # lvl1 -> lvl0
-upsampler2_config = {
+upsampler_lvl1_config = {
     "model_config": {
         "source_lvl": 1,
         "target_lvl": 0,
@@ -139,6 +140,25 @@ def generate_unconditional(batch_size=1, num_inference_steps=50, seed=None):
     audio_lvl0 = unc.decode(embeddings_lvl0, lvl=0)
 
     return [embeddings_lvl0, embeddings_lvl1, embeddings_lvl2], [audio_lvl0, audio_lvl1, audio_lvl2]
+
+def upsample(audio_file, from_lvl, to_lvl):
+    assert 2 >= from_lvl > to_lvl >= 0
+
+    vqvae = JukeboxVQVAEModel()
+
+    from_lvls = range(from_lvl, to_lvl, -1)
+
+    full_audio = torchaudio.load(audio_file)[0].squeeze(-1)
+    embeddings = vqvae.encode(full_audio, lvl=from_lvl)
+
+    for lvl in from_lvls:
+        upsampler = load_upsampler(upsampler_lvl1_config if lvl == 1 else upsampler_lvl2_config)
+        embeddings = upsampler.generate_upsample(embeddings, target_seq_len=embeddings.shape[1]*4, num_inference_steps=50)
+
+    audio = vqvae.decode(embeddings, lvl=to_lvl)
+    return audio
+
+
 
 if __name__ == "__main__":
     import argparse

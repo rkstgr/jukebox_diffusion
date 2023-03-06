@@ -1,0 +1,5 @@
+_target_: src.datamodule.acapella_datamodule.AcapellaDataModule
+root_dir: ${oc.env:ACAPELLA_DATASET_DIR}
+batch_size: 32
+num_workers: 0
+sample_length: 220500

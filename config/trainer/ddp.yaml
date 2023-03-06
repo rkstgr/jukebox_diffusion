@@ -2,6 +2,6 @@ defaults:
   - default.yaml
 
 accelerator: gpu
-devices: 2
+devices: 4
 strategy: ddp
 num_nodes: 1

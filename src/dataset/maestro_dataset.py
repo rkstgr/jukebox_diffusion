@@ -53,7 +53,7 @@ class MaestroDataset(Dataset):
         if self.initial_shuffle:
             index = self.indices[index]
 
-        audio_sample = torch.from_numpy(self.dataset[index])
+        audio_sample = torch.from_numpy(self.dataset[index][0])
 
         if self.mono:
             audio_sample = torch.mean(audio_sample, dim=1, keepdim=True)

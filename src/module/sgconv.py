@@ -583,10 +583,12 @@ class GConvStackedDiffusion(nn.Module):
         transposed
     """
 
-    def __init__(self, input_dim, time_emb_dim, model_dim, channels, depth=4, timestep_max_index=1000):
+    def __init__(self, input_dim, time_emb_dim, model_dim, channels, depth=4, timestep_max_index=1000, cond_dim=0):
         super().__init__()
+        self.cond_dim = cond_dim
+
         self.timestep_embed = IntegerFourierEmbedding(time_emb_dim, min_index=0, max_index=timestep_max_index)
-        self.initial_linear = nn.Linear(input_dim+time_emb_dim, model_dim)
+        self.initial_linear = nn.Linear(input_dim+time_emb_dim+cond_dim, model_dim)
         self.model = GConvHybrid(data_dim=model_dim, channels=channels, depth=depth)
         self.final_linear = nn.Linear(model_dim, input_dim)
 
@@ -617,7 +619,13 @@ class GConvStackedDiffusion(nn.Module):
 
         inputs = [x_in, t_emb]
 
+        if (cond is not None) ^ (self.cond_dim > 0):
+            raise ValueError("cond_dim is {}, but cond is {}".format(self.cond_dim, cond))
+
         if cond is not None:
+            if cond.dim() == 2:
+                cond = cond.unsqueeze(1)
+
             cond = rearrange(
                 F.interpolate(
                     rearrange(cond, "b s d -> b d s"),

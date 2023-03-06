@@ -159,3 +159,4 @@ wandb/
 
 # Evaluation files
 eval/*
+generated_audio

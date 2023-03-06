@@ -250,9 +250,12 @@ class ResConvBlock(ResidualBlock):
         ], skip)
 
     def forward(self, x_in):
-        x_in = rearrange(x_in, "b t c -> b c t")
+        if self.transpose:
+            x_in = rearrange(x_in, "b t c -> b c t")
         x_out = super().forward(x_in)
-        return rearrange(x_out, "b c t -> b t c")
+        if self.transpose:
+            x_out = rearrange(x_out, "b c t -> b t c")
+        return x_out
 
 
 class SelfAttention1d(nn.Module):
