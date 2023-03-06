@@ -9,6 +9,8 @@ import torchaudio
 from diffusers import SchedulerMixin, PNDMScheduler
 from einops import rearrange
 from pytorch_lightning.loggers import WandbLogger
+import wandb
+import plotly.express as px
 
 from src.model.jukebox_vqvae import JukeboxVQVAEModel
 from src.model.jukebox_normalize import JukeboxNormalizer
@@ -17,6 +19,26 @@ from src.diffusion.pipeline.unconditional_pipeline import UnconditionalPipeline
 from src.diffusion.timestep_sampler.constant_sampler import TimeConstantSampler
 from src.diffusion.timestep_sampler.diffusion_timestep_sampler import DiffusionTimestepSampler
 from src.module.lr_scheduler.warmup import WarmupScheduler
+
+class TimestepLossLogger:
+    def __init__(self, max_timestep: int):
+        self.max_timestep = max_timestep
+        self.reset()
+
+    def update(self, loss: torch.Tensor, timesteps: torch.Tensor):
+        assert loss.dim() == 1
+        assert timesteps.dim() == 1
+
+        for loss, timestep in zip(loss, timesteps):
+            self.losses[timestep.item()].append(loss.item())
+
+    def get_mean_and_std(self):
+        mean = [torch.mean(torch.tensor(losses)) if len(losses) > 0 else torch.tensor(0) for losses in self.losses]
+        std = [torch.std(torch.tensor(losses)) if len(losses) > 0 else torch.tensor(0) for losses in self.losses]
+        return mean, std
+    
+    def reset(self):
+        self.losses = [[] for _ in range(self.max_timestep)]
 
 
 class JukeboxDiffusion(pl.LightningModule):
@@ -79,6 +101,7 @@ class JukeboxDiffusion(pl.LightningModule):
                 param.requires_grad = False
 
         self.lr_scheduler = None
+        self.timestep_loss_logger = TimestepLossLogger(self.noise_scheduler.num_train_timesteps)
 
     def forward(self, x):
         """Computes the loss
@@ -100,17 +123,25 @@ class JukeboxDiffusion(pl.LightningModule):
         prediction_type = self.noise_scheduler.prediction_type
         loss_fn = F.mse_loss if self.hparams.loss_fn == "mse" else F.l1_loss
         if prediction_type == "sample":
-            loss = loss_fn(
+            element_loss = loss_fn(
                 x,
                 model_output,
+                reduction="none",
             )
         elif prediction_type == "epsilon":
-            loss = loss_fn(
+            element_loss = loss_fn(
                 noise,
                 model_output,
+                reduction="none",
             )
         elif prediction_type == "v-prediction":
             raise NotImplementedError
+
+        if self.logger:
+            batch_loss = torch.mean(element_loss, dim=(1, 2))
+            self.timestep_loss_logger.update(batch_loss, timesteps)
+
+        loss = torch.mean(batch_loss)
 
         return loss
 
@@ -129,6 +160,21 @@ class JukeboxDiffusion(pl.LightningModule):
                 del audio
 
         return loss
+
+    def training_epoch_end(self, outputs) -> None:
+        if self.logger:
+            mean_loss, std_loss = self.timestep_loss_logger.get_mean_and_std()
+            figure = px.line(x=list(range(self.timestep_loss_logger.max_timestep)), y=mean_loss, error_y=std_loss)
+            figure.update_layout(
+                title="Loss per timestep",
+                xaxis_title="Timestep",
+                yaxis_title="Loss",
+            )
+            self.logger.experiment.log({"train/loss_per_timestep": wandb.Plotly(figure)})
+
+        self.timestep_loss_logger.reset()
+
+        return super().training_epoch_end(outputs)
 
     def validation_step(self, batch, batch_idx):
         x = self.encode(batch, debug=batch_idx == 0)
@@ -176,7 +222,6 @@ class JukeboxDiffusion(pl.LightningModule):
         if self.hparams.skip_audio_logging:
             return
         if isinstance(self.logger, WandbLogger):
-            import wandb
             self.logger.experiment.log({
                 f"audio/{key}": [wandb.Audio(a, sample_rate=self.SAMPLE_RATE, caption=caption) for a in audio.cpu()],
             })
