@@ -63,6 +63,7 @@ class JukeboxDiffusion(pl.LightningModule):
             skip_audio_logging: bool = False,
             weight_decay: float = 0.01,
             load_vqvae: bool = True,
+            max_epochs: int = 200,
             *args,
             **kwargs,
     ):
@@ -213,6 +214,8 @@ class JukeboxDiffusion(pl.LightningModule):
             audio = self.decode(prompt)
             self.log_audio(audio, "val/prompt", f"epoch_{self.current_epoch}_seed_{seed}")
 
+        self.lr_scheduler.step()
+
         return super().validation_epoch_end(outputs)
 
     def sample_timesteps(self, x_shape: torch.Size):
@@ -278,14 +281,15 @@ class JukeboxDiffusion(pl.LightningModule):
         return self.vqvae.decode(embeddings, lvl=lvl)
 
     def configure_optimizers(self):
-        optim = torch.optim.AdamW(
+        optim = torch.optim.Adam(
             self.model.parameters(),
-            lr=self.hparams.lr,
-            weight_decay=self.hparams.weight_decay,
+            lr=self.hparams.lr
         )
 
-        # don't return, handled manually in optimizer step
-        self.lr_scheduler = WarmupScheduler(optim, warmup_steps=self.hparams.lr_warmup_steps)
+        # don't return, handled manually
+        self.warmup_scheduler = WarmupScheduler(optim, warmup_steps=self.hparams.lr_warmup_steps, min_lr=1e-9) # we step this after each step in optimizer_step
+        self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, self.hparams.max_epochs, eta_min=1e-9) # we step this after each epoch in validation_epoch_end
+        
         return optim
 
     def optimizer_step(
@@ -300,7 +304,7 @@ class JukeboxDiffusion(pl.LightningModule):
             using_lbfgs: bool = False,
     ) -> None:
         optimizer.step(closure=optimizer_closure)
-        self.lr_scheduler.step()
+        self.warmup_scheduler.step()
 
     def generate_continuation(self, prompt: torch.Tensor, seed=None, num_inference_steps=50):
         generator = torch.Generator().manual_seed(seed) if seed is not None else None
