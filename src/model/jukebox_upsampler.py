@@ -1,7 +1,9 @@
 import os
 from pathlib import Path
 from typing import Optional
+from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 
+import wandb
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
@@ -10,10 +12,14 @@ from diffusers import SchedulerMixin, PNDMScheduler
 from einops import rearrange
 from pytorch_lightning.loggers import WandbLogger
 from transformers import JukeboxVQVAEConfig, JukeboxVQVAE
+from src.diffusion.pipeline.conditional_pipeline import ConditionalPipeline
+from src.diffusion.pipeline.unconditional_pipeline import UnconditionalPipeline
 
 from src.diffusion.pipeline.upsampling_pipeline import UpsamplingPipeline
 from src.diffusion.timestep_sampler.constant_sampler import TimeConstantSampler
 from src.diffusion.timestep_sampler.diffusion_timestep_sampler import DiffusionTimestepSampler
+from src.model.jukebox_normalize import JukeboxNormalizer
+from src.model.jukebox_vqvae import JukeboxVQVAEModel
 from src.module.lr_scheduler.warmup import WarmupScheduler
 
 
@@ -27,11 +33,13 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             target_lvl: int = 1,
             lr: float = 1e-4,
             lr_warmup_steps: int = 1000,
-            weight_decay: float = 1e-2,
+            lr_cycle_steps: int = 100_000,
             num_inference_steps: int = 50,
             inference_batch_size: int = 1,
             noise_scheduler: Optional[SchedulerMixin] = None,
             timestep_sampler: Optional[DiffusionTimestepSampler] = None,
+            source_normalizer_path: Optional[Path] = None,
+            target_normalizer_path: Optional[Path] = None,
             prompt_batch_idx: int = 0,
             log_train_audio: bool = False,
             skip_audio_logging: bool = False,
@@ -57,7 +65,16 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         else:
             self.timestep_sampler = timestep_sampler
 
-        self.jukebox_vqvae = self.load_jukebox_vqvae(os.environ["JUKEBOX_VQVAE_PATH"])
+        self.vqvae = JukeboxVQVAEModel(device=self.device)
+        for param in self.vqvae.parameters():
+            param.requires_grad = False
+
+        self.normalizers = {}
+        if source_normalizer_path:
+            self.normalizers[source_lvl] = JukeboxNormalizer(source_normalizer_path)
+        if target_normalizer_path:
+            self.normalizers[target_lvl] = JukeboxNormalizer(target_normalizer_path)
+            
         self.lr_scheduler = None
 
     def forward(self, x, cond):
@@ -74,13 +91,10 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
 
         # Add noise to the latents according to the noise magnitude at each timestep
         noisy_x = self.noise_scheduler.add_noise(x, noise, timesteps)
-        noise_pred = self.model(noisy_x, timesteps, cond)
+        model_out = self.model(noisy_x, timesteps, cond)
 
         # compute between noise & noise_pred only where timesteps > 0
-        loss = F.mse_loss(
-            noise_pred[torch.where(timesteps > 0)],
-            noise[torch.where(timesteps > 0)]
-        )
+        loss = F.mse_loss(x, model_out)
 
         return loss
 
@@ -91,8 +105,8 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         loss = self(target, source)
         self.log_dict({
             "train/loss": loss,
-            "train/lr": self.lr_scheduler.get_last_lr()[0],
-        }, sync_dist=True)
+            "train/lr": self.lr_scheduler.get_lr()[0],
+        }, sync_dist=True, prog_bar=True)
 
         if self.logger and batch_idx == 0 and self.current_epoch % 100 == 0 and self.hparams.log_train_audio:
                 source_audio = self.decode(source[:self.hparams.inference_batch_size], self.hparams.source_lvl)
@@ -127,21 +141,60 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
     def validation_epoch_end(self, outputs) -> None:
         if self.logger:
             seed = torch.randint(0, 1000000, (1,)).item()
+            data = {
+                    "epoch": self.current_epoch,
+                    "seed": seed,
+                    "source": self.decode(outputs[0]["source"], self.hparams.source_lvl),
+                    "target": self.decode(outputs[0]["target"], self.hparams.target_lvl),
+                }
 
-            embeddings = self.generate_upsample(
-                source=outputs[0]["source"],
-                target_seq_len=outputs[0]["target"].shape[1],
-                seed=seed,
-            )
-            assert embeddings.shape == outputs[0]["target"].shape, f"Generated embeddings shape mismatch: {embeddings.shape} != {outputs[0]['target'].shape}"
+            for guidance_scale in self.hparams.guidance_scales:
 
-            audio = self.decode(embeddings, self.hparams.target_lvl)
-            self.log_audio(audio, "val/upsampled", f"epoch_{self.current_epoch}_seed_{seed}")
+                embeddings = self.generate_upsample(
+                    source=outputs[0]["source"],
+                    target_seq_len=outputs[0]["target"].shape[1],
+                    guidance_scale=guidance_scale,
+                    seed=seed,
+                )
 
+                data[f"target_guidance={guidance_scale}"] = self.decode(embeddings, self.hparams.target_lvl)
+
+            self.log_audio_table("val/audio", data)
         return super().validation_epoch_end(outputs)
 
     def sample_timesteps(self, x_shape: torch.Size):
         return self.timestep_sampler.sample_timesteps(x_shape)
+
+    def log_audio_table(self, key, audio_dict):
+        table_data = [] # list of lists
+        # get the first item in audio_dict that is a tensor and return batch size
+        batch_size = None
+        for k, v in audio_dict.items():
+            if isinstance(v, torch.Tensor):
+                batch_size = v.shape[0]
+                break
+        if batch_size is None:
+            raise ValueError("No tensor found in audio_dict. Provide at least one tensor to log audio table.")
+
+        def to_audio(a):
+            return wandb.Audio(a.cpu(), sample_rate=self.SAMPLE_RATE)
+        
+        keys = list(audio_dict.keys())
+        table_data = [] # rows, where each row is a list of values
+        for i in range(batch_size):
+            row = []
+            for k in keys:
+                v = audio_dict[k]
+                if isinstance(v, torch.Tensor):
+                    # we assume it's audio
+                    row.append(to_audio(v[i]))
+                else:
+                    row.append(v)
+            table_data.append(row)
+                
+
+        table = wandb.Table(columns=list(keys), data=table_data)
+        self.logger.experiment.log({key: table})
 
     def log_audio(self, audio, key, caption=None):
         if self.hparams.skip_audio_logging:
@@ -151,6 +204,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             self.logger.experiment.log({
                 f"audio/{key}": [wandb.Audio(a, sample_rate=self.SAMPLE_RATE, caption=caption) for a in audio.cpu()],
             })
+        # tensorboard logging
         else:
             audio = torch.clamp(audio, -1, 1).cpu()
             for i, a in enumerate(audio):
@@ -158,51 +212,42 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
                 Path(path).parent.mkdir(parents=True, exist_ok=True)
                 torchaudio.save(filepath=path, src=a, sample_rate=self.SAMPLE_RATE)
 
-    def load_jukebox_vqvae(self, vae_path):
-        print("Loading Jukebox VAE")
-        config = JukeboxVQVAEConfig.from_pretrained("openai/jukebox-1b-lyrics")
-        vae = JukeboxVQVAE(config)
-        vae.load_state_dict(torch.load(vae_path, map_location=self.device))
-        vae.eval().to(self.device)
-        return vae
-
-    @staticmethod
-    def preprocess(batch: torch.Tensor) -> torch.Tensor:
-        return batch / torch.tensor(8)
-
-    @staticmethod
-    def postprocess(batch: torch.Tensor) -> torch.Tensor:
-        return batch * torch.tensor(8)
-
     @torch.no_grad()
     def encode(self, audio: torch.Tensor, lvl: int):
-        audio = rearrange(audio, "b t c -> b c t")
-        encoder = self.jukebox_vqvae.encoders[lvl]
-        embeddings = encoder(audio)[-1]
-        embeddings = rearrange(embeddings, "b c t -> b t c")
-        embeddings = self.preprocess(embeddings)
+        normalizer = self.normalizers.get(lvl, None)
+
+        embeddings = self.vqvae.encode(audio, lvl=lvl)
+        if normalizer:
+            embeddings = normalizer.normalize(embeddings)
+            embeddings = embeddings.clamp(-5, 5)
         return embeddings
 
     @torch.no_grad()
     def decode(self, embeddings, lvl):
-        embeddings = self.postprocess(embeddings)
-        embeddings = rearrange(embeddings, "b t c -> b c t")
-        # Use only lowest level
-        decoder = self.jukebox_vqvae.decoders[lvl]
-        with torch.no_grad():
-            de_quantised_state = decoder([embeddings], all_levels=False)
-        de_quantised_state = de_quantised_state.permute(0, 2, 1)
-        return de_quantised_state
+        normalizer = self.normalizers.get(lvl, None)
+
+        if normalizer:
+            embeddings = normalizer.denormalize(embeddings)
+        audio = self.vqvae.decode(embeddings, lvl=lvl)
+        return audio
 
     def configure_optimizers(self):
-        optim = torch.optim.AdamW(
+        optim = torch.optim.Adam(
             self.model.parameters(),
             lr=self.hparams.lr,
-            weight_decay=self.hparams.weight_decay,
         )
 
         # don't return, handled manually in optimizer step
-        self.lr_scheduler = WarmupScheduler(optim, warmup_steps=self.hparams.lr_warmup_steps)
+        self.lr_scheduler = CosineAnnealingWarmupRestarts(
+            optim, 
+            first_cycle_steps=self.hparams.lr_cycle_steps, 
+            cycle_mult=1.0, 
+            max_lr=self.hparams.lr, 
+            min_lr=1e-8, 
+            warmup_steps=self.hparams.lr_warmup_steps, 
+            gamma=0.5
+        )
+
         return optim
 
     def optimizer_step(
@@ -219,20 +264,23 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         optimizer.step(closure=optimizer_closure)
         self.lr_scheduler.step()
 
-    def generate_upsample(self, source: torch.Tensor, target_seq_len: int, num_inference_steps=None, seed=None):
+    def generate_upsample(self, source: torch.Tensor, target_seq_len: int, num_inference_steps=None, seed=None, guidance_scale=1.0):
         if num_inference_steps is None:
             num_inference_steps = self.hparams.num_inference_steps
         generator = torch.Generator().manual_seed(seed) if seed is not None else None
 
-        pipeline = UpsamplingPipeline(
+        pipeline = ConditionalPipeline(
             unet=self.model,
             scheduler=self.noise_scheduler,
         ).to(self.device)
 
-        jukebox_latents = pipeline(
-            source=source,
+        embeddings = pipeline(
+            conditioning=source,
+            guidance_scale=guidance_scale,
             target_seq_len=target_seq_len,
             generator=generator,
             num_inference_steps=num_inference_steps,
         )
-        return jukebox_latents
+        assert embeddings.shape[1] == target_seq_len, f"Generated embeddings have wrong length. Expected {target_seq_len}, got {embeddings.shape[1]}"
+
+        return embeddings
