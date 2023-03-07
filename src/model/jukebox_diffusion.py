@@ -50,8 +50,8 @@ class JukeboxDiffusion(pl.LightningModule):
             model: torch.nn.Module,
             target_lvl: int = 2,
             lr: float = 1e-4,
-            lr_warmup_steps: int = 10, # in epochs
-            lr_cycle_steps: int = 100,
+            lr_warmup_steps: int = 1_000, # in optimizer steps
+            lr_cycle_steps: int = 100_000,
             loss_fn: str = "mse",
             num_inference_steps: int = 50,
             inference_batch_size: int = 1,
@@ -143,8 +143,9 @@ class JukeboxDiffusion(pl.LightningModule):
         if self.logger:
             batch_loss = torch.mean(element_loss, dim=(1, 2))
             self.timestep_loss_logger.update(batch_loss, timesteps)
-
-        loss = torch.mean(batch_loss)
+            loss = torch.mean(batch_loss)
+        else:
+            loss = torch.mean(element_loss)
 
         return loss
 
@@ -153,7 +154,7 @@ class JukeboxDiffusion(pl.LightningModule):
         loss = self(target)
         self.log_dict({
             "train/loss": loss,
-            "train/lr": self.lr_scheduler.get_last_lr()[0],
+            "train/lr": self.lr_scheduler.get_lr()[0],
         }, sync_dist=True, prog_bar=True)
 
         if self.logger and batch_idx == 0 and self.current_epoch % 100 == 0 and self.hparams.log_train_audio:
@@ -196,6 +197,7 @@ class JukeboxDiffusion(pl.LightningModule):
                 batch_size=self.hparams.inference_batch_size,
                 seq_len=outputs[0].shape[1],
                 seed=seed,
+                num_inference_steps=5 if self.current_epoch == 0 else self.hparams.num_inference_steps,
             )
             audio = self.decode(embeddings, debug=True)
             self.log_audio(audio, "unconditional", f"epoch_{self.current_epoch}_seed_{seed}")
@@ -287,7 +289,7 @@ class JukeboxDiffusion(pl.LightningModule):
         )
 
         # don't return, handled manually
-        lr_scheduler = CosineAnnealingWarmupRestarts(
+        self.lr_scheduler = CosineAnnealingWarmupRestarts(
             optim, 
             first_cycle_steps=self.hparams.lr_cycle_steps, 
             cycle_mult=1.0, 
@@ -297,7 +299,21 @@ class JukeboxDiffusion(pl.LightningModule):
             gamma=0.5
         )
 
-        return ([optim], [lr_scheduler])
+        return optim
+
+    def optimizer_step(
+            self,
+            epoch: int,
+            batch_idx: int,
+            optimizer,
+            optimizer_idx: int = 0,
+            optimizer_closure=None,
+            on_tpu: bool = False,
+            using_native_amp: bool = False,
+            using_lbfgs: bool = False,
+    ) -> None:
+        optimizer.step(closure=optimizer_closure)
+        self.lr_scheduler.step()
 
     def generate_continuation(self, prompt: torch.Tensor, seed=None, num_inference_steps=50):
         generator = torch.Generator().manual_seed(seed) if seed is not None else None
