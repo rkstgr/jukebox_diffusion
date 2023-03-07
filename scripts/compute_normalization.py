@@ -31,7 +31,7 @@ def main(dataset_name: str, embedding_lvl: int, subset: int = 10):
     sub_idx = list(range(0, len(dataset), subset))
     dataset = Subset(dataset, sub_idx)
 
-    dataloader = DataLoader(dataset, batch_size=16, shuffle=False, num_workers=4, pin_memory=True)
+    dataloader = DataLoader(dataset, batch_size=20, shuffle=False, num_workers=4, pin_memory=True)
 
     normalizer = JukeboxNormalizer()
     vqvae = JukeboxVQVAEModel().to(device)
@@ -44,9 +44,10 @@ def main(dataset_name: str, embedding_lvl: int, subset: int = 10):
         sample = rearrange(sample, "b t c -> (b t) c")
         sample_accumulator.append(sample)
     
-    sample = torch.cat(sample_accumulator, dim=0)
-    mean = torch.mean(sample, dim=0)
-    std = torch.std(sample, dim=0)
+    sample_accumulator = torch.cat(sample_accumulator, dim=0)
+    print(sample_accumulator.shape)
+    mean = torch.mean(sample_accumulator, dim=0)
+    std = torch.std(sample_accumulator, dim=0)
 
     print(mean)
     print(std)
