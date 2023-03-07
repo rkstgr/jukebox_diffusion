@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from typing import Optional
+from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 
 import pytorch_lightning as pl
 import torch
@@ -49,7 +50,8 @@ class JukeboxDiffusion(pl.LightningModule):
             model: torch.nn.Module,
             target_lvl: int = 2,
             lr: float = 1e-4,
-            lr_warmup_steps: int = 1000,
+            lr_warmup_steps: int = 10, # in epochs
+            lr_cycle_steps: int = 100,
             loss_fn: str = "mse",
             num_inference_steps: int = 50,
             inference_batch_size: int = 1,
@@ -152,7 +154,7 @@ class JukeboxDiffusion(pl.LightningModule):
         self.log_dict({
             "train/loss": loss,
             "train/lr": self.lr_scheduler.get_last_lr()[0],
-        }, sync_dist=True)
+        }, sync_dist=True, prog_bar=True)
 
         if self.logger and batch_idx == 0 and self.current_epoch % 100 == 0 and self.hparams.log_train_audio:
             with torch.no_grad():
@@ -213,8 +215,6 @@ class JukeboxDiffusion(pl.LightningModule):
             # log original prompt
             audio = self.decode(prompt)
             self.log_audio(audio, "val/prompt", f"epoch_{self.current_epoch}_seed_{seed}")
-
-        self.lr_scheduler.step()
 
         return super().validation_epoch_end(outputs)
 
@@ -287,24 +287,17 @@ class JukeboxDiffusion(pl.LightningModule):
         )
 
         # don't return, handled manually
-        self.warmup_scheduler = WarmupScheduler(optim, warmup_steps=self.hparams.lr_warmup_steps, min_lr=1e-9) # we step this after each step in optimizer_step
-        self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, self.hparams.max_epochs, eta_min=1e-9) # we step this after each epoch in validation_epoch_end
-        
-        return optim
+        lr_scheduler = CosineAnnealingWarmupRestarts(
+            optim, 
+            first_cycle_steps=self.hparams.lr_cycle_steps, 
+            cycle_mult=1.0, 
+            max_lr=self.hparams.lr, 
+            min_lr=1e-8, 
+            warmup_steps=self.hparams.lr_warmup_steps, 
+            gamma=0.5
+        )
 
-    def optimizer_step(
-            self,
-            epoch: int,
-            batch_idx: int,
-            optimizer,
-            optimizer_idx: int = 0,
-            optimizer_closure=None,
-            on_tpu: bool = False,
-            using_native_amp: bool = False,
-            using_lbfgs: bool = False,
-    ) -> None:
-        optimizer.step(closure=optimizer_closure)
-        self.warmup_scheduler.step()
+        return optim, lr_scheduler
 
     def generate_continuation(self, prompt: torch.Tensor, seed=None, num_inference_steps=50):
         generator = torch.Generator().manual_seed(seed) if seed is not None else None
