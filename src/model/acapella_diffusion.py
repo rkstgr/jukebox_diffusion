@@ -11,7 +11,7 @@ from diffusers import SchedulerMixin, PNDMScheduler
 from einops import rearrange
 from pytorch_lightning.loggers import WandbLogger
 import wandb
-from src.diffusion.pipeline.conditional_pipeline import AcapellaPipeline
+from src.diffusion.pipeline.acapella_pipeline import AcapellaPipeline
 
 from src.model.jukebox_vqvae import JukeboxVQVAEModel
 from src.model.jukebox_normalize import JukeboxNormalizer
