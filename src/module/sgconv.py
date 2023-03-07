@@ -488,14 +488,14 @@ class GConv(nn.Module):
 
 
 class SGConvBlock(nn.Module):
-    def __init__(self, input_dim, channels, bidirectional, dropout):
+    def __init__(self, input_dim, channels, bidirectional, dropout, l_max=2**13):
         super().__init__()
         self.act1 = nn.GLU()
         self.act2 = nn.GELU()
         self.ff1 = nn.Linear(input_dim, input_dim * 2)
         self.gconv = GConv(
             input_dim, channels=channels, bidirectional=bidirectional, dropout=dropout, transposed=False,
-            l_max=2048 * 8, kernel_dim=64
+            l_max=l_max, kernel_dim=64
         )
         self.ff2 = nn.Linear(input_dim, input_dim)
         self.norm = nn.LayerNorm(input_dim)
@@ -532,41 +532,45 @@ class GConvStacked(nn.Module):
         return x
 
 class GConvHybrid(nn.Module):
-    def __init__(self, data_dim: int, channels: int = 32, dropout: float = 0.0, depth: int = 4) -> None:
+    def __init__(self, data_dim: int, channels: int = 32, dropout: float = 0.0, depth: int = 4, l_max = 2**14) -> None:
         super().__init__()
         input_dim = data_dim
         down_modules = []
         up_modules = []
+        max_l_max = l_max
+        min_l_max = 128
         
         dim = input_dim
 
         down_modules = []
         for i in range(depth):
             down_modules.append(ResConvBlock(c_in=dim, c_mid=input_dim*2, c_out=dim, transpose=True))
-            down_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout))
+            down_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
             if i % 2 == 0:
                 down_modules.append(nn.Linear(dim, dim*2)),
                 dim *= 2
             down_modules.append(Downsample1d("cubic", transpose=True))
+            l_max = max(l_max // 2, min_l_max)
         self.down = nn.ModuleList(down_modules)
 
-        self.mid = SGConvBlock(dim, channels, bidirectional=True, dropout=dropout)
+        self.mid = SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max)
 
         up_modules = []
         for i in range(depth):
             up_modules.append(Upsample1d("cubic", transpose=True))
+            l_max  = min(l_max * 2, max_l_max)
             if i % 2 == 0:
                 up_modules.append(nn.Linear(dim, dim//2)),
                 dim //= 2
             up_modules.append(ResConvBlock(c_in=dim, c_mid=input_dim*2, c_out=dim, transpose=True))
-            up_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout))
+            up_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
         self.up = nn.ModuleList(up_modules)
 
     def forward(self, x):
         # x = [batch size, seq len, d_model]
         for i, layer in enumerate(self.down):
             x = layer(x)
-        x = self.mid(x) # 128 * 512
+        x = self.mid(x)
         for layer in self.up:
             x = layer(x)
         return x
@@ -583,13 +587,13 @@ class GConvStackedDiffusion(nn.Module):
         transposed
     """
 
-    def __init__(self, input_dim, time_emb_dim, model_dim, channels, depth=4, timestep_max_index=1000, cond_dim=0):
+    def __init__(self, input_dim, time_emb_dim, model_dim, channels, depth=4, timestep_max_index=1000, cond_dim=0, l_max=2**14):
         super().__init__()
         self.cond_dim = cond_dim
 
         self.timestep_embed = IntegerFourierEmbedding(time_emb_dim, min_index=0, max_index=timestep_max_index)
         self.initial_linear = nn.Linear(input_dim+time_emb_dim+cond_dim, model_dim)
-        self.model = GConvHybrid(data_dim=model_dim, channels=channels, depth=depth)
+        self.model = GConvHybrid(data_dim=model_dim, channels=channels, depth=depth, l_max=l_max)
         self.final_linear = nn.Linear(model_dim, input_dim)
 
         self.output_dim = input_dim
