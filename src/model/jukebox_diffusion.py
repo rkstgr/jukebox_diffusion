@@ -297,7 +297,7 @@ class JukeboxDiffusion(pl.LightningModule):
             gamma=0.5
         )
 
-        return optim, lr_scheduler
+        return ([optim], [lr_scheduler])
 
     def generate_continuation(self, prompt: torch.Tensor, seed=None, num_inference_steps=50):
         generator = torch.Generator().manual_seed(seed) if seed is not None else None
