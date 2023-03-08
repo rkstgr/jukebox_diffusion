@@ -12,12 +12,12 @@ defaults:
 
 tags: ["maestro", "jukebox", "lvl2", "unconditional", "run"]
 
-seed: 432
+seed: 1001
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 4
-  batch_size: 80
+  batch_size: 60
   sample_length: 262144
 
 model:
@@ -32,7 +32,7 @@ model:
     timestep_max_index: 1000
   lr: 1e-4
   lr_warmup_steps: 1000
-  max_epochs: 500
+  lr_cycle_steps: 100_000
   inference_batch_size: 16
   noise_scheduler:
     _target_: diffusers.DPMSolverMultistepScheduler
@@ -42,7 +42,7 @@ model:
     beta_schedule: linear
     solver_order: 3
     prediction_type: sample
-  normalizer_path: "normalizations/maestro_val_lvl_1.pt"
+  normalizer_path: "normalizations/maestro_lvl_2.pt"
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000

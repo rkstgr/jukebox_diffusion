@@ -11,19 +11,19 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["maestro", "jukebox", "lvl2", "upsample", "run"] # TODO
+tags: ["maestro", "jukebox", "lvl1", "upsample", "run"]
 
 seed: 21
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 4
-  batch_size: 80
+  batch_size: 10
   sample_length: 131072
 
 model:
-  source_lvl: 2
-  target_lvl: 1
+  source_lvl: 1
+  target_lvl: 0
   model:
     _target_: src.module.sgconv.GConvStackedDiffusion
     input_dim: 64
@@ -51,8 +51,8 @@ model:
   source_noise_std: 1.0
   source_dropout: 0.0
   guidance_scales: [1]
-  source_normalizer_path: "normalizations/maestro_lvl_2.pt"
-  target_normalizer_path: "normalizations/maestro_lvl_1.pt"
+  source_normalizer_path: "normalizations/maestro_lvl_1.pt"
+  target_normalizer_path: "normalizations/maestro_lvl_0.pt"
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000
@@ -64,6 +64,6 @@ logger:
   wandb:
     project: "jukebox_diffusion"
     tags: ${tags}
-    name: "upsample_lvl2"
+    name: "upsample_lvl1"
   tensorboard:
     name: "jukebox_diffusion"
