@@ -122,14 +122,16 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             "train/lr": self.lr_scheduler.get_lr()[0],
         }, sync_dist=True, prog_bar=True)
 
+        if self.logger and self.current_epoch == 0 and batch_idx == 0:
+            if os.environ.get("SLURM_JOB_ID"):
+                    self.logger.experiment.config["SLURM_JOB_ID"] = os.environ.get("SLURM_JOB_ID")
+
         if self.logger and batch_idx == 0 and self.current_epoch % 100 == 0 and self.hparams.log_train_audio:
                 source_audio = self.decode(source[:self.hparams.inference_batch_size], self.hparams.source_lvl)
                 target_audio = self.decode(target[:self.hparams.inference_batch_size], self.hparams.target_lvl)
                 
                 self.log_audio(source_audio, f"train/lvl{self.hparams.source_lvl}", f"epoch_{self.current_epoch}")
                 self.log_audio(target_audio, f"train/lvl{self.hparams.target_lvl}", f"epoch_{self.current_epoch}")
-
-                wandb.config["slurm_job_id"] = os.environ.get("SLURM_JOB_ID", "unknown")
 
                 del source_audio, target_audio
 

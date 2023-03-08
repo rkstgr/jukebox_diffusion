@@ -157,6 +157,10 @@ class JukeboxDiffusion(pl.LightningModule):
             "train/lr": self.lr_scheduler.get_lr()[0],
         }, sync_dist=True, prog_bar=True)
 
+        if self.logger and self.current_epoch == 0 and batch_idx == 0:
+            if os.environ.get("SLURM_JOB_ID"):
+                    self.logger.experiment.config["SLURM_JOB_ID"] = os.environ.get("SLURM_JOB_ID")
+
         if self.logger and batch_idx == 0 and self.current_epoch % 100 == 0 and self.hparams.log_train_audio:
             with torch.no_grad():
                 audio = self.decode(target[:self.hparams.inference_batch_size])
