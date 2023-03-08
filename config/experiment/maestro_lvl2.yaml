@@ -17,11 +17,11 @@ seed: 1001
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 4
-  batch_size: 56
-  sample_length: 262144
+  batch_size: 92
+  sample_length: 524288
 
 model:
-  target_lvl: 1
+  target_lvl: 2
   model:
     _target_: src.module.sgconv.GConvStackedDiffusion
     input_dim: 64
@@ -30,6 +30,7 @@ model:
     channels: 8
     depth: 10
     timestep_max_index: 1000
+    l_max: 8_192
   lr: 1e-4
   lr_warmup_steps: 1000
   lr_cycle_steps: 100_000
