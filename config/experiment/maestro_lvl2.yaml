@@ -17,7 +17,7 @@ seed: 1001
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 4
-  batch_size: 60
+  batch_size: 56
   sample_length: 262144
 
 model:
