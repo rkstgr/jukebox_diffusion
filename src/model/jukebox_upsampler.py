@@ -40,6 +40,9 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             timestep_sampler: Optional[DiffusionTimestepSampler] = None,
             source_normalizer_path: Optional[Path] = None,
             target_normalizer_path: Optional[Path] = None,
+            source_dropout: float = 0.0,
+            source_noise_std: float = 0.0,
+            guidance_scales: Optional[list] = None,
             prompt_batch_idx: int = 0,
             log_train_audio: bool = False,
             skip_audio_logging: bool = False,
@@ -69,12 +72,17 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         for param in self.vqvae.parameters():
             param.requires_grad = False
 
-        self.normalizers = {}
         if source_normalizer_path:
-            self.normalizers[source_lvl] = JukeboxNormalizer(source_normalizer_path)
+            self.register_module("source_normalizer", JukeboxNormalizer(source_normalizer_path))
+        else:
+            self.source_normalizer = None
         if target_normalizer_path:
-            self.normalizers[target_lvl] = JukeboxNormalizer(target_normalizer_path)
-            
+            self.register_module("target_normalizer", JukeboxNormalizer(target_normalizer_path))
+        else:
+            self.target_normalizer = None
+        
+        self.guidance_scales = [1.0] if guidance_scales is None else guidance_scales
+        
         self.lr_scheduler = None
 
     def forward(self, x, cond):
@@ -102,6 +110,12 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         source = self.encode(batch, self.hparams.source_lvl)
         target = self.encode(batch, self.hparams.target_lvl)
 
+        # dropout and add noise
+        if (self.hparams.source_dropout > 0) and torch.rand(1) < self.hparams.source_dropout:
+            source = torch.zeros_like(source)
+        elif self.hparams.source_noise_std > 0:
+                source = source + torch.randn_like(source) * self.hparams.source_noise_std
+
         loss = self(target, source)
         self.log_dict({
             "train/loss": loss,
@@ -112,8 +126,11 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
                 source_audio = self.decode(source[:self.hparams.inference_batch_size], self.hparams.source_lvl)
                 target_audio = self.decode(target[:self.hparams.inference_batch_size], self.hparams.target_lvl)
                 
-                self.log_audio(source_audio, f"train/lvl{self.hparams.source_lvl}", f"epoch_{self.current_epoch}_source")
-                self.log_audio(target_audio, f"train/lvl{self.hparams.target_lvl}", f"epoch_{self.current_epoch}_target")
+                self.log_audio(source_audio, f"train/lvl{self.hparams.source_lvl}", f"epoch_{self.current_epoch}")
+                self.log_audio(target_audio, f"train/lvl{self.hparams.target_lvl}", f"epoch_{self.current_epoch}")
+
+                wandb.config["slurm_job_id"] = os.environ.get("SLURM_JOB_ID", "unknown")
+
                 del source_audio, target_audio
 
         return loss
@@ -126,13 +143,6 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         self.log("val/loss", loss, sync_dist=True)
 
         if self.logger and batch_idx == self.hparams.prompt_batch_idx:
-            source_audio = self.decode(source[:self.hparams.inference_batch_size], self.hparams.source_lvl)
-            target_audio = self.decode(target[:self.hparams.inference_batch_size], self.hparams.target_lvl)
-
-            self.log_audio(batch[:self.hparams.inference_batch_size], "val/original", f"epoch_{self.current_epoch}")
-            self.log_audio(source_audio, f"val/lvl{self.hparams.source_lvl}", f"epoch_{self.current_epoch}_source")
-            self.log_audio(target_audio, f"val/lvl{self.hparams.target_lvl}", f"epoch_{self.current_epoch}_target")
-
             return dict(
                 source=source,
                 target=target,
@@ -148,13 +158,14 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
                     "target": self.decode(outputs[0]["target"], self.hparams.target_lvl),
                 }
 
-            for guidance_scale in self.hparams.guidance_scales:
+            for guidance_scale in self.guidance_scales:
 
                 embeddings = self.generate_upsample(
                     source=outputs[0]["source"],
                     target_seq_len=outputs[0]["target"].shape[1],
                     guidance_scale=guidance_scale,
                     seed=seed,
+                    num_inference_steps=10 if self.current_epoch == 0 else self.hparams.num_inference_steps
                 )
 
                 data[f"target_guidance={guidance_scale}"] = self.decode(embeddings, self.hparams.target_lvl)
@@ -214,7 +225,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
 
     @torch.no_grad()
     def encode(self, audio: torch.Tensor, lvl: int):
-        normalizer = self.normalizers.get(lvl, None)
+        normalizer = self.source_normalizer if lvl == self.hparams.source_lvl else self.target_normalizer
 
         embeddings = self.vqvae.encode(audio, lvl=lvl)
         if normalizer:
@@ -224,7 +235,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
 
     @torch.no_grad()
     def decode(self, embeddings, lvl):
-        normalizer = self.normalizers.get(lvl, None)
+        normalizer = self.source_normalizer if lvl == self.hparams.source_lvl else self.target_normalizer
 
         if normalizer:
             embeddings = normalizer.denormalize(embeddings)
@@ -277,7 +288,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         embeddings = pipeline(
             conditioning=source,
             guidance_scale=guidance_scale,
-            target_seq_len=target_seq_len,
+            seq_len=target_seq_len,
             generator=generator,
             num_inference_steps=num_inference_steps,
         )
