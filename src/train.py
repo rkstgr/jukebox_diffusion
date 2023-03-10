@@ -1,3 +1,5 @@
+from pathlib import Path
+import signal
 import pyrootutils
 import torch
 
@@ -13,9 +15,9 @@ from typing import List, Optional, Tuple
 
 import hydra
 import pytorch_lightning as pl
+from pytorch_lightning.plugins.environments import SLURMEnvironment
 from omegaconf import DictConfig
 from pytorch_lightning import Callback, LightningDataModule, LightningModule, Trainer
-from pytorch_lightning.loggers import LightningLoggerBase
 
 from src import utils
 
@@ -43,6 +45,8 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     if cfg.get("seed"):
         pl.seed_everything(cfg.seed, workers=True)
 
+    torch.set_float32_matmul_precision('medium')
+
     log.info(f"Instantiating datamodule <{cfg.datamodule._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.datamodule)
 
@@ -53,10 +57,13 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     callbacks: List[Callback] = utils.instantiate_callbacks(cfg.get("callbacks"))
 
     log.info("Instantiating loggers...")
-    logger: List[LightningLoggerBase] = utils.instantiate_loggers(cfg.get("logger"))
+    logger: List = utils.instantiate_loggers(cfg.get("logger"))
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
-    trainer: Trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
+    trainerFactory = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger, _partial_=True)
+    trainer: Trainer = trainerFactory(plugins=[SLURMEnvironment(
+        auto_requeue=True, requeue_signal=signal.SIGUSR1
+        )])
 
     object_dict = {
         "cfg": cfg,
@@ -73,7 +80,14 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
 
     if cfg.get("train"):
         log.info("Starting training!")
-        trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
+        ckpt_path = cfg.get("ckpt_path")
+        # 1 ckpt_path is None -> start from scratch
+        # 2 ckpt_path is not existing -> start from scratch
+        # 3 ckpt_path is existing -> resume training
+        if ckpt_path is not None and not Path(ckpt_path).exists():
+            log.warning(f"Checkpoint path <{ckpt_path}> not found! Starting from scratch...")
+            ckpt_path = None
+        trainer.fit(model=model, datamodule=datamodule, ckpt_path=ckpt_path)
 
     train_metrics = trainer.callback_metrics
 
