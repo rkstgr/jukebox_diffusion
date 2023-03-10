@@ -1,0 +1,75 @@
+# @package _global_
+
+# maestro_unconditional_lvl2_unet_100M.yaml
+
+defaults:
+  - override /callbacks: default.yaml
+  - override /trainer: default.yaml
+  - override /datamodule: maestro_datamodule.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["maestro", "jukebox", "lvl2", "unconditional", "dev"]
+
+seed: 1001
+
+hydra:
+  run:
+    dir: ${paths.log_dir}/${task_name}/runs/maestro_dev
+
+ckpt_path: ${paths.output_dir}/checkpoints/last.ckpt
+
+trainer:
+  max_epochs: 1_000
+  overfit_batches: 32
+
+
+datamodule:
+  root_dir: ${oc.env:MAESTRO_DATASET_DIR}
+  num_workers: 0
+  batch_size: 2
+  sample_length: 65536
+
+model:
+  target_lvl: 2
+  model:
+    _target_: src.module.sgconv.GConvStackedDiffusion
+    input_dim: 64
+    time_emb_dim: 32
+    model_dim: 32
+    channels: 8
+    depth: 4
+    timestep_max_index: 1000
+    l_max: 2_048
+  lr: 1e-4
+  lr_warmup_steps: 1000
+  lr_cycle_steps: 10_000
+  inference_batch_size: 4
+  noise_scheduler:
+    _target_: diffusers.DPMSolverMultistepScheduler
+    num_train_timesteps: 1000
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: linear
+    solver_order: 3
+    prediction_type: sample
+  normalizer_path: "normalizations/maestro_lvl_2.pt"
+  timestep_sampler:
+    _target_: src.diffusion.timestep_sampler.TimeConstantSampler
+    max_timestep: 1000
+  num_inference_steps: 10
+  generate_unconditional: true
+  generate_continuation: false
+  log_train_audio: true
+  skip_audio_logging: false
+
+
+logger:
+  wandb:
+    project: "jukebox_diffusion"
+    tags: ${tags}
+    name: "maestro_dev"
+    id: "maestro_dev"
+  tensorboard:
+    name: "jukebox_diffusion"
