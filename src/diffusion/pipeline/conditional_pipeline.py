@@ -87,7 +87,7 @@ class ConditionalPipeline(SequencePipeline):
             seq = self.scheduler.step(
                 model_output, t, seq, return_dict=True).prev_sample
             if clip:
-                seq = torch.clip(seq, -5, 5)
+                seq.clamp_(-5, 5)
             report_stats(seq, f"Step {t}")
 
         return seq
