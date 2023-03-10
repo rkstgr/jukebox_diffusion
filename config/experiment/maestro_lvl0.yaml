@@ -1,7 +1,5 @@
 # @package _global_
 
-# maestro_unconditional_lvl2_unet_100M.yaml
-
 defaults:
   - override /callbacks: default.yaml
   - override /trainer: default.yaml
@@ -10,31 +8,41 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["maestro", "lvl0", "unconditional", "run"]
+tags: ["run"]
 
-seed: 443
+seed: 500
+
+hydra:
+  run:
+    dir: ${paths.log_dir}/${task_name}/runs/uncond_lvl0
+
+ckpt_path: ${paths.output_dir}/checkpoints/last.ckpt
+
+trainer:
+  max_steps: 120_000
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 4
-  batch_size: 22
-  sample_length: 262144
+  batch_size: 16
+  sample_length: 524288
 
 model:
   target_lvl: 0
   model:
+    # target params (jukebox small prior): 161_862_656
     _target_: src.module.sgconv.GConvStackedDiffusion
     input_dim: 64
     time_emb_dim: 32
-    model_dim: 48
-    channels: 8
-    depth: 10
+    model_dim: 64
+    channels: 1
+    depth: 8
     timestep_max_index: 1000
-    l_max: 32_768
+    l_max: 65_536
   lr: 1e-4
-  lr_warmup_steps: 1_000
-  lr_cycle_steps: 100_000
-  inference_batch_size: 16
+  lr_warmup_steps: 5_000
+  lr_cycle_steps: 120_000
+  inference_batch_size: 8
   noise_scheduler:
     _target_: diffusers.DPMSolverMultistepScheduler
     num_train_timesteps: 1000
@@ -59,5 +67,6 @@ logger:
     project: "jukebox_diffusion"
     tags: ${tags}
     name: "uncond_lvl0"
+    id: "uncond_lvl0"
   tensorboard:
     name: "jukebox_diffusion"
