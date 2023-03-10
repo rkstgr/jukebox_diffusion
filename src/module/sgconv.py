@@ -544,7 +544,9 @@ class GConvHybrid(nn.Module):
 
         down_modules = []
         for i in range(depth):
-            down_modules.append(ResConvBlock(c_in=dim, c_mid=input_dim*2, c_out=dim, transpose=True))
+            down_modules.append(ResConvBlock(c_in=dim, c_mid=dim*2, c_out=dim, transpose=True))
+            down_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
+            down_modules.append(ResConvBlock(c_in=dim, c_mid=dim*2, c_out=dim, transpose=True))
             down_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
             if i % 2 == 0:
                 down_modules.append(nn.Linear(dim, dim*2)),
@@ -553,7 +555,12 @@ class GConvHybrid(nn.Module):
             l_max = max(l_max // 2, min_l_max)
         self.down = nn.ModuleList(down_modules)
 
-        self.mid = SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max)
+        self.mid = nn.Sequential(
+            SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max),
+            ResConvBlock(c_in=dim, c_mid=dim*2, c_out=dim, transpose=True),
+            SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max),
+            ResConvBlock(c_in=dim, c_mid=dim*2, c_out=dim, transpose=True),
+        )
 
         up_modules = []
         for i in range(depth):
@@ -562,8 +569,10 @@ class GConvHybrid(nn.Module):
             if i % 2 == 0:
                 up_modules.append(nn.Linear(dim, dim//2)),
                 dim //= 2
-            up_modules.append(ResConvBlock(c_in=dim, c_mid=input_dim*2, c_out=dim, transpose=True))
             up_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
+            up_modules.append(ResConvBlock(c_in=dim, c_mid=dim*2, c_out=dim, transpose=True))
+            up_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
+            up_modules.append(ResConvBlock(c_in=dim, c_mid=dim*2, c_out=dim, transpose=True))
         self.up = nn.ModuleList(up_modules)
 
     def forward(self, x):
