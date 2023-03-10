@@ -41,7 +41,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             source_normalizer_path: Optional[Path] = None,
             target_normalizer_path: Optional[Path] = None,
             source_dropout: float = 0.0,
-            source_noise_std: float = 0.0,
+            source_aug_noise_std: float = 0.0,
             guidance_scales: Optional[list] = None,
             prompt_batch_idx: int = 0,
             log_train_audio: bool = False,
@@ -120,7 +120,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         loss = self(target, source)
         self.log_dict({
             "train/loss": loss,
-            "train/lr": self.lr_scheduler.get_lr()[0],
+            "train/lr": self.lr_schedulers().get_lr()[0],
         }, sync_dist=True, prog_bar=True)
 
         if self.logger and self.current_epoch == 0 and batch_idx == 0:
@@ -249,11 +249,10 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
     def configure_optimizers(self):
         optim = torch.optim.Adam(
             self.model.parameters(),
-            lr=self.hparams.lr,
+            lr=self.hparams.lr
         )
 
-        # don't return, handled manually in optimizer step
-        self.lr_scheduler = CosineAnnealingWarmupRestarts(
+        lr_scheduler = CosineAnnealingWarmupRestarts(
             optim, 
             first_cycle_steps=self.hparams.lr_cycle_steps, 
             cycle_mult=1.0, 
@@ -263,21 +262,14 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             gamma=0.5
         )
 
-        return optim
-
-    def optimizer_step(
-            self,
-            epoch: int,
-            batch_idx: int,
-            optimizer,
-            optimizer_idx: int = 0,
-            optimizer_closure=None,
-            on_tpu: bool = False,
-            using_native_amp: bool = False,
-            using_lbfgs: bool = False,
-    ) -> None:
-        optimizer.step(closure=optimizer_closure)
-        self.lr_scheduler.step()
+        return {
+            "optimizer": optim,
+            "lr_scheduler": {
+                "scheduler": lr_scheduler,
+                "interval": "step",
+                "frequency": 1,
+            }
+        }
 
     def generate_upsample(self, source: torch.Tensor, target_seq_len: int, num_inference_steps=None, seed=None, guidance_scale=1.0):
         if num_inference_steps is None:

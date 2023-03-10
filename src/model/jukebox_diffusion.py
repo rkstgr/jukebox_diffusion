@@ -254,18 +254,11 @@ class JukeboxDiffusion(pl.LightningModule):
 
         embeddings = self.vqvae.encode(audio, lvl=lvl)
         if debug:
-            print("Embeddings shape (before norm)", embeddings.shape)
-            print("  Mean:", embeddings.mean().item())
-            print("  Std :", embeddings.std().item())
-            print("  Min :", embeddings.min().item())
-            print("  Max :", embeddings.max().item())
+            print(f"Embeddings: {embeddings.shape} | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
         if self.normalizer is not None:
             embeddings = self.normalizer.normalize(embeddings)
             if debug:
-                print("Mean (after norm):", embeddings.mean())
-                print("Std  (after norm):", embeddings.std())
-                print("Min  (after norm):", embeddings.min())
-                print("Max  (after norm):", embeddings.max())
+                print(f"(normalized) | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
             embeddings = embeddings.clamp(-5, 5)
 
         return embeddings
@@ -276,19 +269,12 @@ class JukeboxDiffusion(pl.LightningModule):
             lvl = self.hparams.target_lvl
 
         if debug:
-            print("** Decode shape:", embeddings.shape)
-            print("Mean (before denorm):", embeddings.mean())
-            print("Std  (before denorm):", embeddings.std())
-            print("Min  (before denorm):", embeddings.min())
-            print("Max  (before denorm):", embeddings.max())
+            print(f"Decode: {embeddings.shape} | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
             
         if self.normalizer is not None:
             embeddings = self.normalizer.denormalize(embeddings)
             if debug:
-                print("Mean (after denorm):", embeddings.mean())
-                print("Std  (after denorm):", embeddings.std())
-                print("Min  (after denorm):", embeddings.min())
-                print("Max  (after denorm):", embeddings.max())
+                print(f"(denormalized) | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
 
         return self.vqvae.decode(embeddings, lvl=lvl)
 
