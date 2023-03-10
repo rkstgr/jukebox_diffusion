@@ -7,7 +7,6 @@ from typing import Callable, List
 import hydra
 from omegaconf import DictConfig
 from pytorch_lightning import Callback
-from pytorch_lightning.loggers import LightningLoggerBase
 from pytorch_lightning.utilities import rank_zero_only
 
 from src.utils import pylogger, rich_utils
@@ -109,9 +108,9 @@ def instantiate_callbacks(callbacks_cfg: DictConfig) -> List[Callback]:
     return callbacks
 
 
-def instantiate_loggers(logger_cfg: DictConfig) -> List[LightningLoggerBase]:
+def instantiate_loggers(logger_cfg: DictConfig):
     """Instantiates loggers from config."""
-    logger: List[LightningLoggerBase] = []
+    logger = []
 
     if not logger_cfg:
         log.warning("Logger config is empty.")
