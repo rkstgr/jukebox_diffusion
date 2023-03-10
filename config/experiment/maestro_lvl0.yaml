@@ -31,6 +31,7 @@ model:
   target_lvl: 0
   model:
     # target params (jukebox small prior): 161_862_656
+    # current params: 176M
     _target_: src.module.sgconv.GConvStackedDiffusion
     input_dim: 64
     time_emb_dim: 32
