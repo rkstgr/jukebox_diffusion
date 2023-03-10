@@ -34,9 +34,15 @@ class TimestepLossLogger:
             self.losses[timestep.item()].append(loss.item())
 
     def get_mean_and_std(self):
-        mean = [torch.mean(torch.tensor(losses)) if len(losses) > 0 else torch.tensor(0) for losses in self.losses]
-        std = [torch.std(torch.tensor(losses)) if len(losses) > 0 else torch.tensor(0) for losses in self.losses]
-        return mean, std
+        t = []
+        mean = []
+        std = []
+        for timestep, losses in enumerate(self.losses):
+            if len(losses) > 0:
+                t.append(timestep)
+                mean.append(torch.mean(torch.tensor(losses)))
+                std.append(torch.std(torch.tensor(losses)))
+        return t, mean, std
     
     def reset(self):
         self.losses = [[] for _ in range(self.max_timestep)]
@@ -142,7 +148,7 @@ class JukeboxDiffusion(pl.LightningModule):
 
         if self.logger:
             batch_loss = torch.mean(element_loss, dim=(1, 2))
-            self.timestep_loss_logger.update(batch_loss, timesteps)
+            self.timestep_loss_logger.update(batch_loss.detach(), timesteps)
             loss = torch.mean(batch_loss)
         else:
             loss = torch.mean(element_loss)
@@ -154,7 +160,7 @@ class JukeboxDiffusion(pl.LightningModule):
         loss = self(target)
         self.log_dict({
             "train/loss": loss,
-            "train/lr": self.lr_scheduler.get_lr()[0],
+            "train/lr": self.lr_schedulers().get_lr()[0],
         }, sync_dist=True, prog_bar=True)
 
         if self.logger and self.current_epoch == 0 and batch_idx == 0:
@@ -170,11 +176,11 @@ class JukeboxDiffusion(pl.LightningModule):
         return loss
 
     def training_epoch_end(self, outputs) -> None:
-        if self.logger:
-            mean_loss, std_loss = self.timestep_loss_logger.get_mean_and_std()
-            figure = px.line(x=list(range(self.timestep_loss_logger.max_timestep)), y=mean_loss, error_y=std_loss)
+        if self.logger :
+            t, mean_loss, std_loss = self.timestep_loss_logger.get_mean_and_std()
+            figure = px.scatter(x=t, y=mean_loss, error_y=std_loss)
             figure.update_layout(
-                title="Loss per timestep",
+                title="Mean loss per timestep with std",
                 xaxis_title="Timestep",
                 yaxis_title="Loss",
             )
@@ -292,8 +298,7 @@ class JukeboxDiffusion(pl.LightningModule):
             lr=self.hparams.lr
         )
 
-        # don't return, handled manually
-        self.lr_scheduler = CosineAnnealingWarmupRestarts(
+        lr_scheduler = CosineAnnealingWarmupRestarts(
             optim, 
             first_cycle_steps=self.hparams.lr_cycle_steps, 
             cycle_mult=1.0, 
@@ -303,21 +308,14 @@ class JukeboxDiffusion(pl.LightningModule):
             gamma=0.5
         )
 
-        return optim
-
-    def optimizer_step(
-            self,
-            epoch: int,
-            batch_idx: int,
-            optimizer,
-            optimizer_idx: int = 0,
-            optimizer_closure=None,
-            on_tpu: bool = False,
-            using_native_amp: bool = False,
-            using_lbfgs: bool = False,
-    ) -> None:
-        optimizer.step(closure=optimizer_closure)
-        self.lr_scheduler.step()
+        return {
+            "optimizer": optim,
+            "lr_scheduler": {
+                "scheduler": lr_scheduler,
+                "interval": "step",
+                "frequency": 1,
+            }
+        }
 
     def generate_continuation(self, prompt: torch.Tensor, seed=None, num_inference_steps=50):
         generator = torch.Generator().manual_seed(seed) if seed is not None else None

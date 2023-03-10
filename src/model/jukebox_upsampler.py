@@ -46,6 +46,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             prompt_batch_idx: int = 0,
             log_train_audio: bool = False,
             skip_audio_logging: bool = False,
+            clip_embeddings: bool = False,
             *args,
             **kwargs,
     ):
@@ -232,7 +233,8 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         embeddings = self.vqvae.encode(audio, lvl=lvl)
         if normalizer:
             embeddings = normalizer.normalize(embeddings)
-            embeddings = embeddings.clamp(-5, 5)
+            if self.hparams.clip_embeddings:
+                embeddings = embeddings.clamp(-5, 5)
         return embeddings
 
     @torch.no_grad()
@@ -293,6 +295,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             seq_len=target_seq_len,
             generator=generator,
             num_inference_steps=num_inference_steps,
+            clip=self.hparams.clip_embeddings,
         )
         assert embeddings.shape[1] == target_seq_len, f"Generated embeddings have wrong length. Expected {target_seq_len}, got {embeddings.shape[1]}"
 
