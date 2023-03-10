@@ -1,7 +1,5 @@
 # @package _global_
 
-# maestro_unconditional_lvl2_unet_100M.yaml
-
 defaults:
   - override /callbacks: default.yaml
   - override /trainer: default.yaml
