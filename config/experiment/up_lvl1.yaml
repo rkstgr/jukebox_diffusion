@@ -25,11 +25,12 @@ trainer:
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 4
-  batch_size: 16
-  sample_length: 524288
+  batch_size: 8
+  sample_length: 262144
 
 model:
-target_lvl: 0
+  source_lvl: 1
+  target_lvl: 0
   model:
     _target_: src.module.sgconv.GConvStackedDiffusion
     input_dim: 64

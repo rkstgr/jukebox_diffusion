@@ -27,7 +27,7 @@ trainer:
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 4
-  batch_size: 64
+  batch_size: 32
   sample_length: 524288
 
 model:
@@ -57,7 +57,7 @@ model:
     solver_order: 3
     prediction_type: sample
   num_inference_steps: 50
-  source_aug_noise_std: 1.0
+  source_noise_std: 1.0
   source_dropout: 0.0
   guidance_scales: [1]
   source_normalizer_path: "normalizations/maestro_lvl_2.pt"

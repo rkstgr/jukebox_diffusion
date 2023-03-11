@@ -25,7 +25,7 @@ datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 4
   batch_size: 8
-  sample_length: 524288
+  sample_length: 262144
 
 model:
   target_lvl: 0
@@ -39,7 +39,7 @@ model:
     channels: 1
     depth: 8
     timestep_max_index: 1000
-    l_max: 65_536
+    l_max: 32768
   lr: 1e-4
   lr_warmup_steps: 5_000
   lr_cycle_steps: 120_000

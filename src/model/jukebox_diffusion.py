@@ -165,7 +165,12 @@ class JukeboxDiffusion(pl.LightningModule):
 
         if self.logger and self.current_epoch == 0 and batch_idx == 0:
             if os.environ.get("SLURM_JOB_ID"):
-                    self.logger.experiment.config["SLURM_JOB_ID"] = os.environ.get("SLURM_JOB_ID")
+                if self.logger.experiment.config.get("SLURM_JOB_ID") is None:
+                    self.logger.experiment.config.update({"SLURM_JOB_ID": os.environ.get("SLURM_JOB_ID")})
+                else:
+                    # append
+                    new_job_id = self.logger.experiment.config.get("SLURM_JOB_ID") + "," + os.environ.get("SLURM_JOB_ID")
+                    self.logger.experiment.config.update({"SLURM_JOB_ID": new_job_id}, allow_val_change=True)
 
         if self.logger and batch_idx == 0 and self.current_epoch % 100 == 0 and self.hparams.log_train_audio:
             with torch.no_grad():

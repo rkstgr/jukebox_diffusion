@@ -41,7 +41,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             source_normalizer_path: Optional[Path] = None,
             target_normalizer_path: Optional[Path] = None,
             source_dropout: float = 0.0,
-            source_aug_noise_std: float = 0.0,
+            source_noise_std: float = 0.0,
             guidance_scales: Optional[list] = None,
             prompt_batch_idx: int = 0,
             log_train_audio: bool = False,
@@ -125,7 +125,13 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
 
         if self.logger and self.current_epoch == 0 and batch_idx == 0:
             if os.environ.get("SLURM_JOB_ID"):
-                    self.logger.experiment.config["SLURM_JOB_ID"] = os.environ.get("SLURM_JOB_ID")
+                if self.logger.experiment.config.get("SLURM_JOB_ID") is None:
+                    self.logger.experiment.config.update({"SLURM_JOB_ID": os.environ.get("SLURM_JOB_ID")})
+                else:
+                    # append
+                    new_job_id = self.logger.experiment.config.get("SLURM_JOB_ID") + "," + os.environ.get("SLURM_JOB_ID")
+                    self.logger.experiment.config.update({"SLURM_JOB_ID": new_job_id}, allow_val_change=True)
+
 
         if self.logger and batch_idx == 0 and self.current_epoch % 100 == 0 and self.hparams.log_train_audio:
                 source_audio = self.decode(source[:self.hparams.inference_batch_size], self.hparams.source_lvl)
