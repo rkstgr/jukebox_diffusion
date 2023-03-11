@@ -46,7 +46,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             prompt_batch_idx: int = 0,
             log_train_audio: bool = False,
             skip_audio_logging: bool = False,
-            clip_embeddings: bool = False,
+            clip_embeddings: bool = True,
             *args,
             **kwargs,
     ):

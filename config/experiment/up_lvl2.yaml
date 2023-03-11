@@ -43,7 +43,7 @@ model:
     timestep_max_index: 1000
     l_max: 16_384
   lr: 1e-4
-  lr_warmup_steps: 1_000
+  lr_warmup_steps: 5_000
   lr_cycle_steps: 120_000
   num_train_timesteps: 1000
   inference_batch_size: 8
