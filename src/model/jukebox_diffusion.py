@@ -259,7 +259,7 @@ class JukeboxDiffusion(pl.LightningModule):
             embeddings = self.normalizer.normalize(embeddings)
             if debug:
                 print(f"(normalized) | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
-            embeddings = embeddings.clamp(-5, 5)
+            embeddings.clamp_(-5, 5)
 
         return embeddings
 

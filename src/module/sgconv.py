@@ -577,7 +577,7 @@ class GConvHybrid(nn.Module):
 
     def forward(self, x):
         # x = [batch size, seq len, d_model]
-        for i, layer in enumerate(self.down):
+        for layer in self.down:
             x = layer(x)
         x = self.mid(x)
         for layer in self.up:
