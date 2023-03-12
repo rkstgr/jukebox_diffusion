@@ -25,7 +25,7 @@ trainer:
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 4
-  batch_size: 16
+  batch_size: 24
   sample_length: 524288
 
 model:
@@ -40,7 +40,7 @@ model:
     timestep_max_index: 1000
     l_max: 16_384
   lr: 1e-4
-  lr_warmup_steps: 1_000
+  lr_warmup_steps: 5_000
   lr_cycle_steps: 120_000
   inference_batch_size: 8
   noise_scheduler:

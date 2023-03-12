@@ -24,7 +24,7 @@ trainer:
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
   num_workers: 4
-  batch_size: 8
+  batch_size: 12
   sample_length: 262144
 
 model:

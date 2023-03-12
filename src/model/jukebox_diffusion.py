@@ -294,7 +294,7 @@ class JukeboxDiffusion(pl.LightningModule):
             first_cycle_steps=self.hparams.lr_cycle_steps, 
             cycle_mult=1.0, 
             max_lr=self.hparams.lr, 
-            min_lr=1e-8, 
+            min_lr=self.hparams.lr/10, 
             warmup_steps=self.hparams.lr_warmup_steps, 
             gamma=0.5
         )
