@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Optional, Dict
 import itertools
+from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 
 import pytorch_lightning as pl
 import torch
@@ -174,8 +175,18 @@ class AcapellaDiffusion(pl.LightningModule):
         loss = self(x, cond)
         self.log_dict({
             "train/loss": loss,
-            "train/lr": self.lr_scheduler.get_last_lr()[0],
+            "train/lr": self.lr_schedulers().get_lr()[0],
         }, sync_dist=True)
+
+        if self.logger and self.current_epoch == 0 and batch_idx == 0:
+            if os.environ.get("SLURM_JOB_ID"):
+                if self.logger.experiment.config.get("SLURM_JOB_ID") is None:
+                    self.logger.experiment.config.update({"SLURM_JOB_ID": os.environ.get("SLURM_JOB_ID")})
+                else:
+                    # append
+                    new_job_id = self.logger.experiment.config.get("SLURM_JOB_ID") + "," + os.environ.get("SLURM_JOB_ID")
+                    self.logger.experiment.config.update({"SLURM_JOB_ID": new_job_id}, allow_val_change=True)
+
 
         if self.logger and batch_idx == 0 and self.current_epoch % 100 == 0 and self.hparams.log_train_audio:
             with torch.no_grad():
@@ -276,19 +287,12 @@ class AcapellaDiffusion(pl.LightningModule):
 
         embeddings = self.vqvae.encode(audio, lvl=lvl)
         if debug:
-            print("Embeddings shape (before norm)", embeddings.shape)
-            print("  Mean:", embeddings.mean().item())
-            print("  Std :", embeddings.std().item())
-            print("  Min :", embeddings.min().item())
-            print("  Max :", embeddings.max().item())
+            print(f"Embeddings: {embeddings.shape} | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
         if self.normalizer is not None:
             embeddings = self.normalizer.normalize(embeddings)
             if debug:
-                print("Mean (after norm):", embeddings.mean())
-                print("Std  (after norm):", embeddings.std())
-                print("Min  (after norm):", embeddings.min())
-                print("Max  (after norm):", embeddings.max())
-            embeddings = embeddings.clamp(-5, 5)
+                print(f"(normalized) | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
+            embeddings.clamp_(-5, 5)
         return embeddings
 
     @torch.no_grad()
@@ -297,52 +301,45 @@ class AcapellaDiffusion(pl.LightningModule):
             lvl = self.hparams.target_lvl
 
         if debug:
-            print("** Decode shape:", embeddings.shape)
-            print("Mean (before denorm):", embeddings.mean())
-            print("Std  (before denorm):", embeddings.std())
-            print("Min  (before denorm):", embeddings.min())
-            print("Max  (before denorm):", embeddings.max())
+            print(f"Decode: {embeddings.shape} | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
 
         if self.normalizer is not None:
             embeddings = self.normalizer.denormalize(embeddings)
             if debug:
-                print("Mean (after denorm):", embeddings.mean())
-                print("Std  (after denorm):", embeddings.std())
-                print("Min  (after denorm):", embeddings.min())
-                print("Max  (after denorm):", embeddings.max())
+                print(f"(denormalized) | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
 
         return self.vqvae.decode(embeddings, lvl=lvl)
 
     def configure_optimizers(self):
         # model parameters and embeddings
 
-        optim = torch.optim.AdamW(
+        optim = torch.optim.Adam(
             list(self.parameters()) + 
             list(self.singer_embedding.parameters()) +
             list(self.language_embedding.parameters()) +
             list(self.gender_embedding.parameters()),
             lr=self.hparams.lr,
-            weight_decay=self.hparams.weight_decay,
         )
 
-        # don't return, handled manually in optimizer step
-        self.lr_scheduler = WarmupScheduler(
-            optim, warmup_steps=self.hparams.lr_warmup_steps)
-        return optim
+        lr_scheduler = CosineAnnealingWarmupRestarts(
+            optim, 
+            first_cycle_steps=self.hparams.lr_cycle_steps, 
+            cycle_mult=1.0, 
+            max_lr=self.hparams.lr, 
+            min_lr=self.hparams.lr/10, 
+            warmup_steps=self.hparams.lr_warmup_steps, 
+            gamma=0.5
+        )
 
-    def optimizer_step(
-            self,
-            epoch: int,
-            batch_idx: int,
-            optimizer,
-            optimizer_idx: int = 0,
-            optimizer_closure=None,
-            on_tpu: bool = False,
-            using_native_amp: bool = False,
-            using_lbfgs: bool = False,
-    ) -> None:
-        optimizer.step(closure=optimizer_closure)
-        self.lr_scheduler.step()
+        return {
+            "optimizer": optim,
+            "lr_scheduler": {
+                "scheduler": lr_scheduler,
+                "interval": "step",
+                "frequency": 1,
+            }
+        }
+
 
     def generate_continuation(self, prompt: torch.Tensor, seed=None, num_inference_steps=50):
         generator = torch.Generator().manual_seed(seed) if seed is not None else None

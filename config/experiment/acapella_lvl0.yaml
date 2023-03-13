@@ -51,7 +51,7 @@ model:
     beta_schedule: linear
     solver_order: 3
     prediction_type: sample
-  normalizer_path: "normalizations/acapella_lvl0.pt"
+  normalizer_path: "normalizations/acapella_lvl_0.pt"
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000
@@ -74,4 +74,4 @@ logger:
     tags: ${tags}
     id: "cond_lvl0"
   tensorboard:
-    name: "jukebox_diffusion"
+    name: "acapella_diffusion"

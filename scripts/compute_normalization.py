@@ -59,8 +59,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default="maestro")
-    parser.add_argument("--embedding_lvl", type=int, default=2)
+    parser.add_argument("--lvl", type=int, default=2)
     parser.add_argument("--subset", type=int, default=10)
     args = parser.parse_args()
 
-    main(args.dataset, args.embedding_lvl, subset=args.subset)
+    main(args.dataset, args.lvl, subset=args.subset)
