@@ -20,7 +20,7 @@ hydra:
 ckpt_path: ${paths.output_dir}/checkpoints/last.ckpt
 
 trainer:
-  max_steps: 120_000
+  max_steps: 200_000
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
@@ -41,7 +41,7 @@ model:
     l_max: 16_384
   lr: 1e-4
   lr_warmup_steps: 5_000
-  lr_cycle_steps: 120_000
+  lr_cycle_steps: 200_000
   inference_batch_size: 8
   noise_scheduler:
     _target_: diffusers.DPMSolverMultistepScheduler
