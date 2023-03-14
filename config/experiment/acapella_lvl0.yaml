@@ -19,11 +19,13 @@ hydra:
 ckpt_path: ${paths.output_dir}/checkpoints/last.ckpt
 
 trainer:
+  precision: 16
   max_steps: 200_000
+  accumulate_grad_batches: 4
 
 datamodule:
   num_workers: 4
-  batch_size: 12
+  batch_size: 16
   sample_length: 262144
 
 model:
@@ -40,8 +42,8 @@ model:
     timestep_max_index: 1000
     l_max: 32768
   lr: 1e-4
-  lr_warmup_steps: 5_000
-  lr_cycle_steps: 160_000
+  lr_warmup_steps: 1_000
+  lr_cycle_steps: 100_000
   inference_batch_size: 16
   noise_scheduler:
     _target_: diffusers.DPMSolverMultistepScheduler
