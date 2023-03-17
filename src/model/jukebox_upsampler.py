@@ -197,7 +197,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             raise ValueError("No tensor found in audio_dict. Provide at least one tensor to log audio table.")
 
         def to_audio(a):
-            return wandb.Audio(a.cpu(), sample_rate=self.SAMPLE_RATE)
+            return wandb.Audio(a.cpu().to(torch.float32), sample_rate=self.SAMPLE_RATE)
         
         keys = list(audio_dict.keys())
         table_data = [] # rows, where each row is a list of values
@@ -222,11 +222,11 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         if isinstance(self.logger, WandbLogger):
             import wandb
             self.logger.experiment.log({
-                f"audio/{key}": [wandb.Audio(a, sample_rate=self.SAMPLE_RATE, caption=caption) for a in audio.cpu()],
+                f"audio/{key}": [wandb.Audio(a, sample_rate=self.SAMPLE_RATE, caption=caption) for a in audio.cpu().float()],
             })
         # tensorboard logging
         else:
-            audio = torch.clamp(audio, -1, 1).cpu()
+            audio = torch.clamp(audio, -1, 1).float().cpu()
             for i, a in enumerate(audio):
                 path = os.path.join(self.logger.save_dir, "audio", key, f"{caption}_batch{i}.wav")
                 Path(path).parent.mkdir(parents=True, exist_ok=True)

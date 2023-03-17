@@ -246,7 +246,7 @@ class JukeboxDiffusion(pl.LightningModule):
                 f"audio/{key}": [wandb.Audio(a, sample_rate=self.SAMPLE_RATE, caption=caption) for a in audio.cpu()],
             })
         else:
-            audio = torch.clamp(audio, -1, 1).cpu()
+            audio = torch.clamp(audio, -1, 1).to(torch.float32).cpu()
             for i, a in enumerate(audio):
                 path = os.path.join(self.logger.save_dir, "audio", key, f"{caption}_batch{i}.wav")
                 Path(path).parent.mkdir(parents=True, exist_ok=True)
