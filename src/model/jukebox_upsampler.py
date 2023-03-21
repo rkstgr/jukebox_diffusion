@@ -258,24 +258,18 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             lr=self.hparams.lr
         )
 
-        lr_scheduler = CosineAnnealingWarmupRestarts(
-            optim, 
-            first_cycle_steps=self.hparams.lr_cycle_steps, 
-            cycle_mult=1.0, 
-            max_lr=self.hparams.lr, 
-            min_lr=1e-8, 
-            warmup_steps=self.hparams.lr_warmup_steps, 
-            gamma=0.5
-        )
-
-        return {
-            "optimizer": optim,
-            "lr_scheduler": {
-                "scheduler": lr_scheduler,
-                "interval": "step",
-                "frequency": 1,
+        if self.hparams.lr_scheduler:
+            return {
+                "optimizer": optim,
+                "lr_scheduler": {
+                    "scheduler": self.hparams.lr_scheduler,
+                    "interval": "step",
+                    "frequency": 1,
+                }
             }
-        }
+
+        else:
+            return optim
 
     def generate_upsample(self, source: torch.Tensor, target_seq_len: int, num_inference_steps=None, seed=None, guidance_scale=1.0):
         if num_inference_steps is None:

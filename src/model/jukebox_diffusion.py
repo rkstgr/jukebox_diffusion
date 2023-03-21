@@ -56,8 +56,7 @@ class JukeboxDiffusion(pl.LightningModule):
             model: torch.nn.Module,
             target_lvl: int = 2,
             lr: float = 1e-4,
-            lr_warmup_steps: int = 1_000, # in optimizer steps
-            lr_cycle_steps: int = 100_000,
+            lr_scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
             loss_fn: str = "mse",
             num_inference_steps: int = 50,
             inference_batch_size: int = 1,
@@ -289,25 +288,19 @@ class JukeboxDiffusion(pl.LightningModule):
             lr=self.hparams.lr
         )
 
-        lr_scheduler = CosineAnnealingWarmupRestarts(
-            optim, 
-            first_cycle_steps=self.hparams.lr_cycle_steps, 
-            cycle_mult=1.0, 
-            max_lr=self.hparams.lr, 
-            min_lr=self.hparams.lr/10, 
-            warmup_steps=self.hparams.lr_warmup_steps, 
-            gamma=0.5
-        )
-
-        return {
-            "optimizer": optim,
-            "lr_scheduler": {
-                "scheduler": lr_scheduler,
-                "interval": "step",
-                "frequency": 1,
+        if self.hparams.lr_scheduler:
+            return {
+                "optimizer": optim,
+                "lr_scheduler": {
+                    "scheduler": self.hparams.lr_scheduler,
+                    "interval": "step",
+                    "frequency": 1,
+                }
             }
-        }
 
+        else:
+            return optim
+ 
     def generate_continuation(self, prompt: torch.Tensor, seed=None, num_inference_steps=50):
         generator = torch.Generator().manual_seed(seed) if seed is not None else None
 

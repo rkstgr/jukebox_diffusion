@@ -22,7 +22,7 @@ ckpt_path: ${paths.output_dir}/checkpoints/last.ckpt
 seed: 501
 
 trainer:
-  max_steps: 120_000
+  max_steps: 500_000
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
@@ -43,9 +43,16 @@ model:
     depth: 8
     timestep_max_index: 1000
     l_max: 16_384
-  lr: 1e-4
-  lr_warmup_steps: 5_000
-  lr_cycle_steps: 120_000
+  lr: 5e-5
+  # no scheduler -> constant lr
+  # lr_scheduler:
+  #   _target_: cosine_annealing_warmup.CosineAnnealingWarmupRestarts
+  #   first_cycle_steps: 250_000
+  #   cycle_mult: 1.0
+  #   max_lr: 1e-4 # this overwrites the lr parameter
+  #   min_lr: 1e-5
+  #   warmup_steps: 10_000
+  #   gamma: 0.5
   num_train_timesteps: 1000
   inference_batch_size: 8
   noise_scheduler:
