@@ -248,7 +248,7 @@ class AcapellaDiffusion(pl.LightningModule):
 
     def log_table(self, audios, guidance_scales, conditioning, key):
         def to_audio(a):
-            return wandb.Audio(a.cpu(), sample_rate=self.SAMPLE_RATE)
+            return wandb.Audio(a.float().cpu(), sample_rate=self.SAMPLE_RATE)
         
 
         table_data = []
@@ -269,10 +269,10 @@ class AcapellaDiffusion(pl.LightningModule):
         if isinstance(self.logger, WandbLogger):
             import wandb
             self.logger.experiment.log({
-                f"audio/{key}": [wandb.Audio(a, sample_rate=self.SAMPLE_RATE, caption=caption) for a in audio.cpu()],
+                f"audio/{key}": [wandb.Audio(a, sample_rate=self.SAMPLE_RATE, caption=caption) for a in audio.float().cpu()],
             })
         else:
-            audio = torch.clamp(audio, -1, 1).cpu()
+            audio = torch.clamp(audio, -1, 1).float().cpu()
             for i, a in enumerate(audio):
                 path = os.path.join(self.logger.save_dir,
                                     "audio", key, f"{caption}_batch{i}.wav")
