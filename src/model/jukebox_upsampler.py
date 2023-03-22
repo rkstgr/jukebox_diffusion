@@ -106,6 +106,12 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         loss = F.mse_loss(x, model_out)
 
         return loss
+    
+    def get_lr(self):
+        if self.lr_scheduler is None:
+            return self.hparams.lr
+        else:
+            self.lr_schedulers().get_lr()[0]
 
     def training_step(self, batch, batch_idx):
         source = self.encode(batch, self.hparams.source_lvl)
@@ -120,7 +126,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
         loss = self(target, source)
         self.log_dict({
             "train/loss": loss,
-            "train/lr": self.lr_schedulers().get_lr()[0],
+            "train/lr": self.get_lr(),
         }, sync_dist=True, prog_bar=True)
 
         if self.logger and self.current_epoch == 0 and batch_idx == 0:
