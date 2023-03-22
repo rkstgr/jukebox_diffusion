@@ -154,12 +154,18 @@ class JukeboxDiffusion(pl.LightningModule):
 
         return loss
 
+    def get_lr(self):
+        if self.lr_scheduler is None:
+            return self.hparams.lr
+        else:
+            self.lr_schedulers().get_lr()[0]
+
     def training_step(self, batch, batch_idx):
         target = self.encode(batch, debug=batch_idx == 1)
         loss = self(target)
         self.log_dict({
             "train/loss": loss,
-            "train/lr": self.lr_schedulers().get_lr()[0],
+            "train/lr": self.get_lr(),
         }, sync_dist=True, prog_bar=True)
 
         if self.logger and self.current_epoch == 0 and batch_idx == 0:
