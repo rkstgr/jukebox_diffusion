@@ -16,7 +16,7 @@ hydra:
   run:
     dir: ${paths.log_dir}/${task_name}/runs/uncond_lvl0
 
-ckpt_path: ${paths.output_dir}/checkpoints/last.ckpt
+ckpt_path: ${paths.output_dir}/checkpoints/step_200000.ckpt
 
 trainer:
   max_steps: 500_000

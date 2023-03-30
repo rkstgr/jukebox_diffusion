@@ -12,45 +12,43 @@ tags: ["run"]
 
 seed: 500
 
-
 hydra:
   run:
-    dir: ${paths.log_dir}/${task_name}/runs/uncond_lvl2
-
-ckpt_path: ${paths.output_dir}/checkpoints/step_300000.ckpt
+    dir: ${paths.log_dir}/${task_name}/runs/uncond_lvl0_unet
 
 trainer:
-  check_val_every_n_epoch: 10
-  max_steps: 800_000
+  max_steps: 200_000
 
 datamodule:
   root_dir: ${oc.env:MAESTRO_DATASET_DIR}
-  num_workers: 8
-  batch_size: 88 # prev. 72
-  sample_length: 524288
+  num_workers: 4
+  batch_size: 12
+  sample_length: 262144
 
 model:
-  target_lvl: 2
+  target_lvl: 0
   model:
+    # target params (jukebox small prior): 161_862_656
+    # current params: 176M
     _target_: src.module.sgconv.GConvStackedDiffusion
     input_dim: 64
     time_emb_dim: 32
     model_dim: 64
     channels: 1
-    depth: 8
+    depth: 7
     timestep_max_index: 1000
-    l_max: 4096
-  lr: 5e-5
+    l_max: 32768
+  lr: 1e-4
   # no scheduler -> constant lr
   # lr_scheduler:
   #   _target_: cosine_annealing_warmup.CosineAnnealingWarmupRestarts
-  #   first_cycle_steps: 400_000
-  #   cycle_mult: 0.25
-  #   max_lr: 5e-5 # this overwrites the lr parameter
-  #   min_lr: 1e-6
+  #   first_cycle_steps: 250_000
+  #   cycle_mult: 1.0
+  #   max_lr: 1e-4 # this overwrites the lr parameter
+  #   min_lr: 1e-5
   #   warmup_steps: 10_000
   #   gamma: 0.5
-  inference_batch_size: 8
+  inference_batch_size: 16
   noise_scheduler:
     _target_: diffusers.DPMSolverMultistepScheduler
     num_train_timesteps: 1000
@@ -59,7 +57,7 @@ model:
     beta_schedule: linear
     solver_order: 3
     prediction_type: sample
-  normalizer_path: "normalizations/maestro_lvl_2.pt"
+  normalizer_path: "normalizations/maestro_lvl_0.pt"
   timestep_sampler:
     _target_: src.diffusion.timestep_sampler.TimeConstantSampler
     max_timestep: 1000
@@ -74,7 +72,7 @@ logger:
   wandb:
     project: "jukebox_diffusion"
     tags: ${tags}
-    name: "uncond_lvl2"
-    id: "uncond_lvl2"
+    name: "uncond_lvl0_unet"
+    id: "uncond_lvl0_unet"
   tensorboard:
     name: "jukebox_diffusion"

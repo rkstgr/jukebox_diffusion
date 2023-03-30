@@ -43,6 +43,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             source_dropout: float = 0.0,
             source_noise_std: float = 0.0,
             guidance_scales: Optional[list] = None,
+            lr_scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
             prompt_batch_idx: int = 0,
             log_train_audio: bool = False,
             skip_audio_logging: bool = False,
@@ -268,7 +269,7 @@ class JukeboxDiffusionUpsampler(pl.LightningModule):
             return {
                 "optimizer": optim,
                 "lr_scheduler": {
-                    "scheduler": self.hparams.lr_scheduler,
+                    "scheduler": self.hparams.lr_scheduler(optimizer=optim),
                     "interval": "step",
                     "frequency": 1,
                 }

@@ -27,12 +27,15 @@ def get_initializer(name, activation=None):
     elif activation in ['gelu', 'swish', 'silu']:
         nonlinearity = 'relu'  # Close to ReLU so approximate with ReLU's gain
     else:
-        raise NotImplementedError(f"get_initializer: activation {activation} not supported")
+        raise NotImplementedError(
+            f"get_initializer: activation {activation} not supported")
 
     if name == 'uniform':
-        initializer = partial(torch.nn.init.kaiming_uniform_, nonlinearity=nonlinearity)
+        initializer = partial(
+            torch.nn.init.kaiming_uniform_, nonlinearity=nonlinearity)
     elif name == 'normal':
-        initializer = partial(torch.nn.init.kaiming_normal_, nonlinearity=nonlinearity)
+        initializer = partial(torch.nn.init.kaiming_normal_,
+                              nonlinearity=nonlinearity)
     elif name == 'xavier':
         initializer = torch.nn.init.xavier_normal_
     elif name == 'zero':
@@ -40,7 +43,8 @@ def get_initializer(name, activation=None):
     elif name == 'one':
         initializer = partial(torch.nn.init.constant_, val=1)
     else:
-        raise NotImplementedError(f"get_initializer: initializer type {name} not supported")
+        raise NotImplementedError(
+            f"get_initializer: initializer type {name} not supported")
 
     return initializer
 
@@ -214,7 +218,8 @@ class Normalization(nn.Module):
             self.channel = False
             norm_args = {'affine': False, 'track_running_stats': False}
             norm_args.update(kwargs)
-            self.norm = nn.InstanceNorm1d(d, **norm_args)  # (True, True) performs very poorly
+            # (True, True) performs very poorly
+            self.norm = nn.InstanceNorm1d(d, **norm_args)
         elif _name_ == 'batch':
             self.channel = False
             norm_args = {'affine': True, 'track_running_stats': True}
@@ -251,9 +256,11 @@ class Normalization(nn.Module):
 
     def step(self, x, **kwargs):
         assert self._name_ in ["layer", "none"]
-        if self.transposed: x = x.unsqueeze(-1)
+        if self.transposed:
+            x = x.unsqueeze(-1)
         x = self.forward(x)
-        if self.transposed: x = x.squeeze(-1)
+        if self.transposed:
+            x = x.squeeze(-1)
         return x
 
 
@@ -349,7 +356,7 @@ class GConv(nn.Module):
             'n_scales', 1 + math.ceil(math.log2(l_max / self.kernel_dim)) - self.init_scale)
         if self.num_scales is None:
             self.num_scales = 1 + \
-                              math.ceil(math.log2(l_max / self.kernel_dim)) - self.init_scale
+                math.ceil(math.log2(l_max / self.kernel_dim)) - self.init_scale
         self.kernel_list = nn.ParameterList()
 
         decay_min = kernel_args.get('decay_min', 2)
@@ -531,23 +538,104 @@ class GConvStacked(nn.Module):
             x = layer(x)
         return x
 
+
+class HybridConvBlock(nn.Module):
+    def __init__(self, input_dim, output_dim, res_conv_args, gconv_args):
+        super().__init__()
+        self.res_conv = ResConvBlock(
+            c_in=input_dim, c_mid=input_dim*2, c_out=output_dim, transpose=True)
+        self.gconv = SGConvBlock(output_dim, **gconv_args)
+
+    def forward(self, x):
+        x = self.res_conv(x)
+        x = self.gconv(x)
+        return x
+
+
+class HybridConvUnet(nn.Module):
+    def __init__(self, input_dim: int, depth: int, conv_args=None, gconv_args=None) -> None:
+        super().__init__()
+        self.depth = depth
+
+        if conv_args is None:
+            conv_args = {}
+        if gconv_args is None:
+            gconv_args = {
+                "channels": 1,
+                "bidirectional": True,
+                "dropout": 0.0,
+                "l_max": 2**16, # 65536
+            }
+
+        self.downsample = Downsample1d("cubic", transpose=True)
+        self.upsample = Upsample1d("cubic", transpose=True)
+
+        self.down_modules = []
+        for i in range(depth):
+            output_dim = int(input_dim*1.5)
+            if output_dim % 2 == 1:
+                output_dim += 1
+            self.down_modules.append(HybridConvBlock(
+                input_dim, output_dim, conv_args, gconv_args))
+            input_dim = output_dim
+            print(input_dim)
+            gconv_args["l_max"] = gconv_args["l_max"] // 2
+            if gconv_args["l_max"] < 2:
+                raise ValueError("Initial l_max is too small for the given depth.")
+
+        self.down_modules = nn.ModuleList(self.down_modules)
+
+        self.mid_module = nn.Sequential(
+            HybridConvBlock(input_dim, input_dim, conv_args, gconv_args),
+        )
+
+        self.up_modules = []
+        for i in reversed(range(depth)):
+            self.up_modules.append(HybridConvBlock(
+                input_dim*2, int(input_dim/1.5), conv_args, gconv_args))
+            input_dim = int(input_dim/1.5)
+            print(input_dim)
+            gconv_args["l_max"] = gconv_args["l_max"] * 2
+        self.up_modules = nn.ModuleList(self.up_modules)
+
+    def forward(self, x):
+        # x = [batch size, seq len, d_model]
+        outputs = []
+        for i in range(self.depth):
+            x = self.down_modules[i](x)
+            outputs.append(x)
+            x = self.downsample(x)
+
+        x = self.mid_module(x)
+
+        for i in range(self.depth):
+            x = self.upsample(x)
+            x = torch.cat([x, outputs[-1-i]], dim=-1)
+            x = self.up_modules[i](x)
+        return x
+
+
 class GConvHybrid(nn.Module):
-    def __init__(self, data_dim: int, channels: int = 32, dropout: float = 0.0, depth: int = 4, l_max = 2**14) -> None:
+    def __init__(self, data_dim: int, channels: int = 32, dropout: float = 0.0, depth: int = 4, l_max=2**14) -> None:
         super().__init__()
         input_dim = data_dim
         down_modules = []
         up_modules = []
         max_l_max = l_max
         min_l_max = 128
-        
+
         dim = input_dim
 
         down_modules = []
         for i in range(depth):
-            down_modules.append(ResConvBlock(c_in=dim, c_mid=dim*2, c_out=dim, transpose=True))
-            down_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
-            down_modules.append(ResConvBlock(c_in=dim, c_mid=dim*2, c_out=dim, transpose=True))
-            down_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
+            down_modules.append(ResConvBlock(
+                c_in=dim, c_mid=dim*2, c_out=dim, transpose=True))
+            down_modules.append(SGConvBlock(
+                dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
+            down_modules.append(ResConvBlock(
+                c_in=dim, c_mid=dim*2, c_out=dim, transpose=True))
+            down_modules.append(SGConvBlock(
+                dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
             if i % 2 == 0:
                 down_modules.append(nn.Linear(dim, dim*2)),
                 dim *= 2
@@ -556,23 +644,29 @@ class GConvHybrid(nn.Module):
         self.down = nn.ModuleList(down_modules)
 
         self.mid = nn.Sequential(
-            SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max),
+            SGConvBlock(dim, channels, bidirectional=True,
+                        dropout=dropout, l_max=l_max),
             ResConvBlock(c_in=dim, c_mid=dim*2, c_out=dim, transpose=True),
-            SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max),
+            SGConvBlock(dim, channels, bidirectional=True,
+                        dropout=dropout, l_max=l_max),
             ResConvBlock(c_in=dim, c_mid=dim*2, c_out=dim, transpose=True),
         )
 
         up_modules = []
         for i in range(depth):
             up_modules.append(Upsample1d("cubic", transpose=True))
-            l_max  = min(l_max * 2, max_l_max)
+            l_max = min(l_max * 2, max_l_max)
             if i % 2 == 0:
                 up_modules.append(nn.Linear(dim, dim//2)),
                 dim //= 2
-            up_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
-            up_modules.append(ResConvBlock(c_in=dim, c_mid=dim*2, c_out=dim, transpose=True))
-            up_modules.append(SGConvBlock(dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
-            up_modules.append(ResConvBlock(c_in=dim, c_mid=dim*2, c_out=dim, transpose=True))
+            up_modules.append(SGConvBlock(
+                dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
+            up_modules.append(ResConvBlock(
+                c_in=dim, c_mid=dim*2, c_out=dim, transpose=True))
+            up_modules.append(SGConvBlock(
+                dim, channels, bidirectional=True, dropout=dropout, l_max=l_max))
+            up_modules.append(ResConvBlock(
+                c_in=dim, c_mid=dim*2, c_out=dim, transpose=True))
         self.up = nn.ModuleList(up_modules)
 
     def forward(self, x):
@@ -583,7 +677,6 @@ class GConvHybrid(nn.Module):
         for layer in self.up:
             x = layer(x)
         return x
-        
 
 class GConvStackedDiffusion(nn.Module):
     """
@@ -600,10 +693,13 @@ class GConvStackedDiffusion(nn.Module):
         super().__init__()
         self.cond_dim = cond_dim
 
-        self.timestep_embed = IntegerFourierEmbedding(time_emb_dim, min_index=0, max_index=timestep_max_index)
-        self.initial_linear = nn.Linear(input_dim+time_emb_dim+cond_dim, model_dim)
-        self.model = GConvHybrid(data_dim=model_dim, channels=channels, depth=depth, l_max=l_max)
-        self.final_linear = nn.Linear(model_dim, input_dim)
+        self.timestep_embed = IntegerFourierEmbedding(
+            time_emb_dim, min_index=0, max_index=timestep_max_index)
+        self.initial_linear = ResConvBlock(c_in=input_dim+time_emb_dim+cond_dim, c_mid=model_dim, c_out=model_dim, transpose=True)
+        self.model = HybridConvUnet(
+            input_dim=model_dim, depth=depth, conv_args={}, gconv_args={"channels": channels, "l_max": l_max, "bidirectional": True, "dropout": 0.0}
+        )
+        self.final_linear = ResConvBlock(c_in=model_dim, c_mid=model_dim, c_out=input_dim, transpose=True)
 
         self.output_dim = input_dim
 
@@ -633,7 +729,8 @@ class GConvStackedDiffusion(nn.Module):
         inputs = [x_in, t_emb]
 
         if (cond is not None) ^ (self.cond_dim > 0):
-            raise ValueError("cond_dim is {}, but cond is {}".format(self.cond_dim, cond))
+            raise ValueError(
+                "cond_dim is {}, but cond is {}".format(self.cond_dim, cond))
 
         if cond is not None:
             if cond.dim() == 2:
@@ -644,8 +741,7 @@ class GConvStackedDiffusion(nn.Module):
                     rearrange(cond, "b s d -> b d s"),
                     x_in.shape[1],
                     mode='linear',
-                    align_corners=False)
-                , "b d s -> b s d"
+                    align_corners=False), "b d s -> b s d"
             )
             inputs.append(cond)
 
@@ -664,12 +760,40 @@ class GConvStackedDiffusion(nn.Module):
         return next(self.model.parameters()).dtype
 
 
-if __name__ == "__main__":
+def test_hybridconvunet():
     from torchinfo import summary
+    gconv_args = {
+        "channels": 1,
+        "bidirectional": True,
+        "dropout": 0.0,
+        "l_max": 2**14,
+    }
+    model = HybridConvUnet(
+        input_dim=64, depth=7, conv_args=None, gconv_args=gconv_args
+    )
 
-    model = GConvHybrid(96, 32)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+
+    x = torch.randn(1, 2**14, 64)
+    # Move the input tensor to the same device as the model
+    x = x.to(device)
+    y = model(x)
+    assert y.shape == x.shape
+
+    summary(model, input_data=(x,), verbose=1)
+
+
+def test_gconvhybrid():
+    from torchinfo import summary
+    
+    model = GConvHybrid(96, 32,)
 
     test_x = torch.randn(1, 2048, 128)
     y = model(test_x)
 
     summary(model, input_data=(test_x,), verbose=1)
+
+
+if __name__ == "__main__":
+    test_hybridconvunet()

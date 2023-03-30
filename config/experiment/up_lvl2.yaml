@@ -17,7 +17,7 @@ hydra:
   run:
     dir: ${paths.log_dir}/${task_name}/runs/up_lvl2
 
-ckpt_path: ${paths.output_dir}/checkpoints/last.ckpt
+ckpt_path: ${paths.output_dir}/checkpoints/step_120000.ckpt
 
 seed: 501
 

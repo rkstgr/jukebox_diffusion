@@ -21,6 +21,7 @@ from src.diffusion.timestep_sampler.constant_sampler import TimeConstantSampler
 from src.diffusion.timestep_sampler.diffusion_timestep_sampler import DiffusionTimestepSampler
 from src.module.lr_scheduler.warmup import WarmupScheduler
 
+
 class TimestepLossLogger:
     def __init__(self, max_timestep: int):
         self.max_timestep = max_timestep
@@ -43,7 +44,7 @@ class TimestepLossLogger:
                 mean.append(torch.mean(torch.tensor(losses)))
                 std.append(torch.std(torch.tensor(losses)))
         return t, mean, std
-    
+
     def reset(self):
         self.losses = [[] for _ in range(self.max_timestep)]
 
@@ -75,7 +76,8 @@ class JukeboxDiffusion(pl.LightningModule):
             **kwargs,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["model", "noise_scheduler", "timestep_sampler", "normalizer", "vqvae", "*args", "**kwargs"])
+        self.save_hyperparameters(ignore=[
+                                  "model", "noise_scheduler", "timestep_sampler", "normalizer", "vqvae", "*args", "**kwargs"])
         self.model = model
 
         if noise_scheduler is None:
@@ -89,16 +91,20 @@ class JukeboxDiffusion(pl.LightningModule):
         else:
             print("Using custom noise scheduler")
             self.noise_scheduler = noise_scheduler
-            print(f"Number of training timesteps: {self.noise_scheduler.num_train_timesteps}")
+            print(
+                f"Number of training timesteps: {self.noise_scheduler.num_train_timesteps}")
 
         if timestep_sampler is None:
-            self.timestep_sampler = TimeConstantSampler(max_timestep=self.noise_scheduler.num_train_timesteps)
-            print(f"Using constant timestep sampler with max timestep {self.noise_scheduler.num_train_timesteps}")
+            self.timestep_sampler = TimeConstantSampler(
+                max_timestep=self.noise_scheduler.num_train_timesteps)
+            print(
+                f"Using constant timestep sampler with max timestep {self.noise_scheduler.num_train_timesteps}")
         else:
             self.timestep_sampler = timestep_sampler
 
         if normalizer_path is not None:
-            self.register_module("normalizer", JukeboxNormalizer(normalizer_path))
+            self.register_module(
+                "normalizer", JukeboxNormalizer(normalizer_path))
         else:
             self.normalizer = None
 
@@ -109,7 +115,8 @@ class JukeboxDiffusion(pl.LightningModule):
                 param.requires_grad = False
 
         self.lr_scheduler = None
-        self.timestep_loss_logger = TimestepLossLogger(self.noise_scheduler.num_train_timesteps)
+        self.timestep_loss_logger = TimestepLossLogger(
+            self.noise_scheduler.num_train_timesteps)
 
     def forward(self, x):
         """Computes the loss
@@ -126,7 +133,6 @@ class JukeboxDiffusion(pl.LightningModule):
         # Add noise to the latents according to the noise magnitude at each timestep
         noisy_x = self.noise_scheduler.add_noise(x, noise, timesteps)
         model_output = self.model(noisy_x, timesteps)
-
 
         prediction_type = self.noise_scheduler.prediction_type
         loss_fn = F.mse_loss if self.hparams.loss_fn == "mse" else F.l1_loss
@@ -171,22 +177,26 @@ class JukeboxDiffusion(pl.LightningModule):
         if self.logger and self.current_epoch == 0 and batch_idx == 0:
             if os.environ.get("SLURM_JOB_ID"):
                 if self.logger.experiment.config.get("SLURM_JOB_ID") is None:
-                    self.logger.experiment.config.update({"SLURM_JOB_ID": os.environ.get("SLURM_JOB_ID")})
+                    self.logger.experiment.config.update(
+                        {"SLURM_JOB_ID": os.environ.get("SLURM_JOB_ID")})
                 else:
                     # append
-                    new_job_id = self.logger.experiment.config.get("SLURM_JOB_ID") + "," + os.environ.get("SLURM_JOB_ID")
-                    self.logger.experiment.config.update({"SLURM_JOB_ID": new_job_id}, allow_val_change=True)
+                    new_job_id = self.logger.experiment.config.get(
+                        "SLURM_JOB_ID") + "," + os.environ.get("SLURM_JOB_ID")
+                    self.logger.experiment.config.update(
+                        {"SLURM_JOB_ID": new_job_id}, allow_val_change=True)
 
         if self.logger and batch_idx == 0 and self.current_epoch % 100 == 0 and self.hparams.log_train_audio:
             with torch.no_grad():
                 audio = self.decode(target[:self.hparams.inference_batch_size])
-                self.log_audio(audio, "train", f"epoch_{self.current_epoch}_batch_{batch_idx}")
+                self.log_audio(
+                    audio, "train", f"epoch_{self.current_epoch}_batch_{batch_idx}")
                 del audio
 
         return loss
 
     def training_epoch_end(self, outputs) -> None:
-        if self.logger :
+        if self.logger:
             t, mean_loss, std_loss = self.timestep_loss_logger.get_mean_and_std()
             figure = px.scatter(x=t, y=mean_loss, error_y=std_loss)
             figure.update_layout(
@@ -194,7 +204,8 @@ class JukeboxDiffusion(pl.LightningModule):
                 xaxis_title="Timestep",
                 yaxis_title="Loss",
             )
-            self.logger.experiment.log({"train/loss_per_timestep": wandb.Plotly(figure)})
+            self.logger.experiment.log(
+                {"train/loss_per_timestep": wandb.Plotly(figure)})
 
         self.timestep_loss_logger.reset()
 
@@ -220,7 +231,8 @@ class JukeboxDiffusion(pl.LightningModule):
                 num_inference_steps=5 if self.current_epoch == 0 else self.hparams.num_inference_steps,
             )
             audio = self.decode(embeddings, debug=True)
-            self.log_audio(audio, "unconditional", f"epoch_{self.current_epoch}_seed_{seed}")
+            self.log_audio(audio, "unconditional",
+                           f"epoch_{self.current_epoch}_seed_{seed}")
 
         if self.logger and len(outputs) > 0 and self.hparams.generate_continuation:
             seed = torch.randint(0, 1000000, (1,)).item()
@@ -233,10 +245,12 @@ class JukeboxDiffusion(pl.LightningModule):
                 num_inference_steps=self.hparams.num_inference_steps,
             )
             audio = self.decode(embeddings)
-            self.log_audio(audio, "val/continuation", f"epoch_{self.current_epoch}_seed_{seed}")
+            self.log_audio(audio, "val/continuation",
+                           f"epoch_{self.current_epoch}_seed_{seed}")
             # log original prompt
             audio = self.decode(prompt)
-            self.log_audio(audio, "val/prompt", f"epoch_{self.current_epoch}_seed_{seed}")
+            self.log_audio(audio, "val/prompt",
+                           f"epoch_{self.current_epoch}_seed_{seed}")
 
         return super().validation_epoch_end(outputs)
 
@@ -253,9 +267,11 @@ class JukeboxDiffusion(pl.LightningModule):
         else:
             audio = torch.clamp(audio, -1, 1).to(torch.float32).cpu()
             for i, a in enumerate(audio):
-                path = os.path.join(self.logger.save_dir, "audio", key, f"{caption}_batch{i}.wav")
+                path = os.path.join(self.logger.save_dir,
+                                    "audio", key, f"{caption}_batch{i}.wav")
                 Path(path).parent.mkdir(parents=True, exist_ok=True)
-                torchaudio.save(filepath=path, src=a, sample_rate=self.SAMPLE_RATE)
+                torchaudio.save(filepath=path, src=a,
+                                sample_rate=self.SAMPLE_RATE)
 
     @torch.no_grad()
     def encode(self, audio: torch.Tensor, lvl=None, debug=False):
@@ -268,7 +284,8 @@ class JukeboxDiffusion(pl.LightningModule):
         if self.normalizer is not None:
             embeddings = self.normalizer.normalize(embeddings)
             if debug:
-                print(f"(normalized) | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
+                print(
+                    f"(normalized) | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
             embeddings.clamp_(-5, 5)
 
         return embeddings
@@ -280,11 +297,12 @@ class JukeboxDiffusion(pl.LightningModule):
 
         if debug:
             print(f"Decode: {embeddings.shape} | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
-            
+
         if self.normalizer is not None:
             embeddings = self.normalizer.denormalize(embeddings)
             if debug:
-                print(f"(denormalized) | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
+                print(
+                    f"(denormalized) | Mean: {embeddings.mean().item():.4f} | Std: {embeddings.std().item():.4f} | Min: {embeddings.min().item():.4f} | Max: {embeddings.max().item():.4f}")
 
         return self.vqvae.decode(embeddings, lvl=lvl)
 
@@ -298,7 +316,7 @@ class JukeboxDiffusion(pl.LightningModule):
             return {
                 "optimizer": optim,
                 "lr_scheduler": {
-                    "scheduler": self.hparams.lr_scheduler,
+                    "scheduler": self.hparams.lr_scheduler(optimizer=optim),
                     "interval": "step",
                     "frequency": 1,
                 }
@@ -306,7 +324,7 @@ class JukeboxDiffusion(pl.LightningModule):
 
         else:
             return optim
- 
+
     def generate_continuation(self, prompt: torch.Tensor, seed=None, num_inference_steps=50):
         generator = torch.Generator().manual_seed(seed) if seed is not None else None
 
